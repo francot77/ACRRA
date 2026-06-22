@@ -128,23 +128,28 @@ export function buildRaceMessage(input: {
 function buildAwards(stats: DriverRaceStats[], groupedIncidents: GroupedIncident[]): Array<{ label: string; value: string }> {
   const awards: Array<{ label: string; value: string }> = [];
   const eligibleDrivers = getAwardEligibleDrivers(stats);
+  const finishedDrivers = eligibleDrivers.filter((entry) => entry.finished);
   const fastestLap = pickOne(
     eligibleDrivers.filter((entry) => entry.bestLap != null),
     (left, right) => compareNumbers(left.bestLap, right.bestLap) || compareNumbers(left.position, right.position) || left.name.localeCompare(right.name)
   );
-  const cleanest = pickOne(
-    eligibleDrivers,
-    (left, right) =>
-      compareNumbers(right.raceScore, left.raceScore) ||
-      compareNumbers(left.carIncidentsGrouped, right.carIncidentsGrouped) ||
-      compareNumbers(left.envHits, right.envHits) ||
-      compareNumbers(left.totalCuts, right.totalCuts) ||
-      compareNumbers(left.maxImpact, right.maxImpact) ||
-      compareNumbers(left.position, right.position) ||
-      left.name.localeCompare(right.name)
-  );
+  const cleanestCandidates = finishedDrivers;
+  const cleanest =
+    cleanestCandidates.length >= 2
+      ? pickOne(
+          cleanestCandidates,
+          (left, right) =>
+            compareNumbers(right.raceScore, left.raceScore) ||
+            compareNumbers(left.carIncidentsGrouped, right.carIncidentsGrouped) ||
+            compareNumbers(left.envHits, right.envHits) ||
+            compareNumbers(left.totalCuts, right.totalCuts) ||
+            compareNumbers(left.maxImpact, right.maxImpact) ||
+            compareNumbers(left.position, right.position) ||
+            left.name.localeCompare(right.name)
+        )
+      : null;
   const albaNil = pickOne(
-    eligibleDrivers,
+    eligibleDrivers.filter((entry) => entry.envHits > 0),
     (left, right) =>
       compareNumbers(right.envHits, left.envHits) ||
       compareNumbers(right.maxEnvImpact, left.maxEnvImpact) ||
@@ -152,11 +157,11 @@ function buildAwards(stats: DriverRaceStats[], groupedIncidents: GroupedIncident
       left.name.localeCompare(right.name)
   );
   const missileIncident = pickOne(
-    groupedIncidents.filter((entry) => entry.maxImpact > 120),
+    groupedIncidents.filter((entry) => entry.maxImpact > 0),
     (left, right) => compareNumbers(right.maxImpact, left.maxImpact) || compareNumbers(right.rawEventCount, left.rawEventCount) || left.pairKey.localeCompare(right.pairKey)
   );
   const missileDriver = pickOne(
-    eligibleDrivers.filter((entry) => entry.maxImpact > 120),
+    eligibleDrivers.filter((entry) => entry.maxImpact > 0),
     (left, right) => compareNumbers(right.maxImpact, left.maxImpact) || compareNumbers(right.rawCollisionEvents, left.rawCollisionEvents) || left.name.localeCompare(right.name)
   );
   const cone = pickOne(
@@ -173,23 +178,48 @@ function buildAwards(stats: DriverRaceStats[], groupedIncidents: GroupedIncident
     eligibleDrivers.filter((entry) => entry.destructiveDnf),
     (left, right) => compareNumbers(right.rawCollisionEvents, left.rawCollisionEvents) || compareNumbers(right.maxImpact, left.maxImpact) || left.name.localeCompare(right.name)
   );
-  const consistent = pickOne(
-    eligibleDrivers.filter((entry) => entry.consistency != null && entry.completedLaps >= 2),
-    (left, right) => compareNumbers(left.consistency, right.consistency) || compareNumbers(left.position, right.position) || left.name.localeCompare(right.name)
-  );
-  const tortoise = pickOne(
-    eligibleDrivers.filter((entry) => entry.finished && entry.avgLap != null),
-    (left, right) => compareNumbers(right.avgLap, left.avgLap) || compareNumbers(right.completedLaps, left.completedLaps) || left.name.localeCompare(right.name)
-  );
+  const consistentCandidates = finishedDrivers.filter((entry) => entry.consistency != null && entry.completedLaps >= 2);
+  const consistent =
+    consistentCandidates.length >= 2
+      ? pickOne(
+          consistentCandidates,
+          (left, right) => compareNumbers(left.consistency, right.consistency) || compareNumbers(left.position, right.position) || left.name.localeCompare(right.name)
+        )
+      : null;
+  const tortoiseCandidates = finishedDrivers.filter((entry) => entry.raceScore >= 60 && entry.avgLap != null);
+  const tortoise =
+    finishedDrivers.length >= 2 && tortoiseCandidates.length >= 2
+      ? pickOne(
+          tortoiseCandidates,
+          (left, right) => compareNumbers(right.avgLap, left.avgLap) || compareNumbers(right.completedLaps, left.completedLaps) || left.name.localeCompare(right.name)
+        )
+      : null;
+  const hideTortoise = tortoise != null && fastestLap != null && tortoise.carId === fastestLap.carId && finishedDrivers.length < 3;
+  const shouldRenderCone =
+    cone != null &&
+    (cone.raceScore < 80 || cone.carIncidentsGrouped > 0 || cone.envHits > 0 || cone.totalCuts > 0 || !cone.finished);
 
   awards.push({ label: '⚡ Vuelta rápida', value: fastestLap ? `${fastestLap.name} (${formatLapTime(fastestLap.bestLap)})` : 'Sin tiempo válido' });
-  awards.push({ label: '🧼 Más limpio', value: cleanest ? formatDriver(cleanest) : 'Sin datos' });
-  awards.push({ label: '🧱 Albañil del día', value: albaNil ? `${albaNil.name} (${albaNil.envHits} golpes al entorno)` : 'Sin datos' });
-  awards.push({ label: '💥 Misil nuclear', value: formatMissileAward(missileIncident, missileDriver) });
-  awards.push({ label: '🚜 Cono del día', value: cone ? `${cone.name} (${cone.raceScore.toFixed(2)} puntos)` : 'Sin datos' });
-  awards.push({ label: '🪦 DNF destructivo', value: destructiveDnf ? `${destructiveDnf.name} (${destructiveDnf.rawCollisionEvents} impactos antes de empezar)` : 'No aplica' });
-  awards.push({ label: '📈 Más consistente', value: consistent ? `${consistent.name} (desvío ${formatConsistency(consistent.consistency)})` : 'Sin datos' });
-  if (tortoise) {
+  if (cleanest) {
+    awards.push({ label: '🧼 Más limpio', value: formatDriver(cleanest) });
+  }
+  if (albaNil) {
+    awards.push({ label: '🧱 Albañil del día', value: `${albaNil.name} (${albaNil.envHits} golpes al entorno)` });
+  }
+  const missileAward = formatMissileAward(missileIncident, missileDriver);
+  if (missileAward) {
+    awards.push({ label: '💥 Misil nuclear', value: missileAward });
+  }
+  if (shouldRenderCone) {
+    awards.push({ label: '🚜 Cono del día', value: `${cone.name} (${cone.raceScore.toFixed(2)} puntos)` });
+  }
+  if (destructiveDnf) {
+    awards.push({ label: '🪦 DNF destructivo', value: `${destructiveDnf.name} (${destructiveDnf.rawCollisionEvents} impactos antes de empezar)` });
+  }
+  if (consistent) {
+    awards.push({ label: '📈 Más consistente', value: `${consistent.name} (desvío ${formatConsistency(consistent.consistency)})` });
+  }
+  if (tortoise && !hideTortoise) {
     awards.push({ label: '🐢 Tortuga digna', value: `${tortoise.name} (${formatAverageLap(tortoise.avgLap)})` });
   }
 
@@ -227,7 +257,7 @@ function formatStatusSuffix(entry: DriverRaceStats): string {
   return '';
 }
 
-function formatMissileAward(incident: GroupedIncident | null, driver: DriverRaceStats | null): string {
+function formatMissileAward(incident: GroupedIncident | null, driver: DriverRaceStats | null): string | null {
   if (incident) {
     const names = incident.driversInvolved.map((entry) => entry.name).filter(Boolean);
     const pairLabel = names.length >= 2 ? `${names[0]} y ${names[1]}` : names[0] ?? `Autos ${incident.carIdsInvolved[0]} y ${incident.carIdsInvolved[1]}`;
@@ -238,7 +268,7 @@ function formatMissileAward(incident: GroupedIncident | null, driver: DriverRace
     return `${driver.name} (${driver.maxImpact.toFixed(2)} km/h de impacto)`;
   }
 
-  return 'No aplica';
+  return null;
 }
 
 function formatAverageLap(value: number | null): string {

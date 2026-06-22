@@ -110,3 +110,12 @@
 - Discord presentation no longer emits raw `ms` values for consistency; it uses `formatLapTime`, `formatGap`, and `formatConsistency` helpers while keeping internal calculations in milliseconds.
 - Incident summary now reports separate max car-car, max environment, and max total impact values.
 - Added regression coverage for null events, inactive/DNS award exclusion, inactive safety no-op, destructive DNF penalty, formatted Discord output, and separated impact summary lines.
+
+## Award Cleanup Bugfix Slice
+
+- `buildRaceMessage.ts` now omits invalid award rows entirely instead of rendering `Sin datos` / `No aplica` placeholders.
+- `🧼 Más limpio` and `📈 Más consistente` now require real competition: at least two active finished candidates, with `completedLaps >= 2` for consistency.
+- `🐢 Tortuga digna` now only considers active finished drivers with `raceScore >= 60`, hides on a sole finisher, and is suppressed when the fastest-lap winner would also take tortoise in a sub-3-finisher race.
+- Negative awards now render only when backed by real data: `envHits > 0` for `🧱 Albañil`, `maxImpact > 0` for `💥 Misil`, `destructiveDnf === true` for `🪦 DNF destructivo`, and `🚜 Cono` only when the worst active driver was actually poor/incident-prone.
+- `tests/webhook.test.ts` now covers the cleanup cases explicitly, including the one-finisher `Kanus` + DNF `ramen` scenario and the absence of `No aplica` lines.
+- Test fixture helper `createStat()` was corrected to preserve explicit `null` lap/consistency values instead of coercing them back to default times, which previously created false-positive award candidates.

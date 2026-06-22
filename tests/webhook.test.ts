@@ -32,10 +32,10 @@ function createStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
     inactive: overrides.inactive ?? false,
     finished: overrides.finished ?? true,
     destructiveDnf: overrides.destructiveDnf ?? false,
-    bestLap: overrides.bestLap ?? 90000,
-    avgLap: overrides.avgLap ?? 90500,
-    idealLap: overrides.idealLap ?? 89000,
-    consistency: overrides.consistency ?? 250,
+    bestLap: overrides.bestLap === undefined ? 90000 : overrides.bestLap,
+    avgLap: overrides.avgLap === undefined ? 90500 : overrides.avgLap,
+    idealLap: overrides.idealLap === undefined ? 89000 : overrides.idealLap,
+    consistency: overrides.consistency === undefined ? 250 : overrides.consistency,
     totalCuts: overrides.totalCuts ?? 0,
     carIncidentsGrouped: overrides.carIncidentsGrouped ?? 0,
     envHits: overrides.envHits ?? 0,
@@ -64,6 +64,10 @@ function createGroupedIncident(): GroupedIncident {
     avgImpact: 120,
     rawEventCount: 2
   };
+}
+
+function getAwardsValue(message: ReturnType<typeof buildRaceMessage>): string {
+  return message.webhookBody.embeds[0]?.fields.find((field) => field.name === 'Premios')?.value ?? '';
 }
 
 test('empty webhook falls back to console logging without crashing', async (t) => {
@@ -175,9 +179,9 @@ test('configured webhook sends exactly one request with the required race report
   assert.match(awardsField?.value ?? '', /🧱 Albañil del día/);
   assert.match(awardsField?.value ?? '', /💥 Misil nuclear/);
   assert.match(awardsField?.value ?? '', /🚜 Cono del día/);
-  assert.match(awardsField?.value ?? '', /🪦 DNF destructivo/);
   assert.match(awardsField?.value ?? '', /📈 Más consistente/);
   assert.match(awardsField?.value ?? '', /🐢 Tortuga digna/);
+  assert.doesNotMatch(awardsField?.value ?? '', /No aplica/);
 });
 
 test('report excludes DNS from awards, marks DNF and DNS, and formats impacts without raw milliseconds', () => {
@@ -251,7 +255,10 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
   assert.match(podiumField?.value ?? '', /Crash Driver \(DNF 0\/3 vueltas\)/);
   assert.doesNotMatch(awardsField?.value ?? '', /DNS Driver/);
   assert.match(awardsField?.value ?? '', /Crash Driver \(3 impactos antes de empezar\)/);
-  assert.match(awardsField?.value ?? '', /±0\.250s/);
+  assert.doesNotMatch(awardsField?.value ?? '', /🧼 Más limpio/);
+  assert.doesNotMatch(awardsField?.value ?? '', /📈 Más consistente/);
+  assert.doesNotMatch(awardsField?.value ?? '', /🐢 Tortuga digna/);
+  assert.doesNotMatch(awardsField?.value ?? '', /No aplica/);
   assert.doesNotMatch(awardsField?.value ?? '', /\b\d+(?:\.\d+)? ms\b/);
   assert.doesNotMatch(safetyField?.value ?? '', /DNS Driver/);
   assert.match(safetyField?.value ?? '', /P3 Crash Driver \(DNF 0\/3 vueltas\): 80\.00 -> 76\.85/);
@@ -261,7 +268,7 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
   assert.match(incidentsField?.value ?? '', /Impacto máximo total: 140\.00/);
 });
 
-test('report explains unchanged safety below the active-driver minimum and formats tortuga digna as M:SS.mmm', () => {
+test('report explains unchanged safety below the active-driver minimum without placeholder awards', () => {
   const message = buildRaceMessage({
     fileName: 'sample-race.json',
     race: createRace(),
@@ -305,8 +312,149 @@ test('report explains unchanged safety below the active-driver minimum and forma
   const safetyField = embed.fields.find((field) => field.name === 'Safety actualizada');
   const unchangedField = embed.fields.find((field) => field.name === 'Safety sin cambios');
 
-  assert.match(awardsField?.value ?? '', /🐢 Tortuga digna: Solo Driver \(1:31\.513\)/);
+  assert.equal(awardsField?.value, '⚡ Vuelta rápida: Solo Driver (1:31.513)');
+  assert.doesNotMatch(awardsField?.value ?? '', /No aplica|Sin datos|Más limpio|Más consistente|Tortuga digna/);
   assert.equal(safetyField?.value, 'Sin cambios');
   assert.match(unchangedField?.value ?? '', /mínimo 3 pilotos activos requerido para ganar Safety\./);
   assert.match(unchangedField?.value ?? '', /P1 Solo Driver/);
+});
+
+test('report hides tortuga digna when a single finisher has no real competition', () => {
+  const awards = getAwardsValue(
+    buildRaceMessage({
+      fileName: 'sample-race.json',
+      race: createRace(),
+      stats: [
+        createStat({ name: 'Kanus', bestLap: 91513, avgLap: 91513, raceScore: 100 }),
+        createStat({
+          carId: 2,
+          name: 'ramen',
+          guid: 'guid-2',
+          identity: { kind: 'guid', value: 'guid-2' },
+          position: 2,
+          completedLaps: 0,
+          hasValidResult: false,
+          finished: false,
+          destructiveDnf: true,
+          envHits: 2,
+          maxEnvImpact: 55,
+          maxImpact: 55,
+          rawCollisionEvents: 3,
+          raceScore: 59,
+          bestLap: null,
+          avgLap: null,
+          idealLap: null,
+          consistency: null,
+          totalTime: 0
+        }),
+        createStat({
+          carId: 3,
+          name: 'DNS One',
+          guid: 'guid-3',
+          identity: { kind: 'guid', value: 'guid-3' },
+          position: 3,
+          active: false,
+          inactive: true,
+          finished: false,
+          completedLaps: 0,
+          hasValidResult: false,
+          bestLap: null,
+          avgLap: null,
+          idealLap: null,
+          consistency: null,
+          totalTime: 0,
+          raceScore: 0,
+          safetyChangeReason: 'inactive'
+        }),
+        createStat({
+          carId: 4,
+          name: 'DNS Two',
+          guid: 'guid-4',
+          identity: { kind: 'guid', value: 'guid-4' },
+          position: 4,
+          active: false,
+          inactive: true,
+          finished: false,
+          completedLaps: 0,
+          hasValidResult: false,
+          bestLap: null,
+          avgLap: null,
+          idealLap: null,
+          consistency: null,
+          totalTime: 0,
+          raceScore: 0,
+          safetyChangeReason: 'inactive'
+        })
+      ],
+      groupedIncidents: [],
+      minActiveDriversForSafetyGain: 3
+    })
+  );
+
+  assert.doesNotMatch(awards, /🐢 Tortuga digna|🧼 Más limpio|📈 Más consistente|No aplica/);
+  assert.match(awards, /⚡ Vuelta rápida: Kanus \(1:31\.513\)/);
+  assert.match(awards, /🧱 Albañil del día: ramen \(2 golpes al entorno\)/);
+  assert.match(awards, /💥 Misil nuclear: ramen \(55\.00 km\/h de impacto\)/);
+  assert.match(awards, /🚜 Cono del día: ramen \(59\.00 puntos\)/);
+  assert.match(awards, /🪦 DNF destructivo: ramen \(3 impactos antes de empezar\)/);
+});
+
+test('report hides clean and consistent awards without enough finished candidates', () => {
+  const awards = getAwardsValue(
+    buildRaceMessage({
+      fileName: 'sample-race.json',
+      race: createRace(),
+      stats: [
+        createStat({ name: 'Solo Driver', bestLap: 91513, avgLap: 91600, consistency: 100, raceScore: 95 }),
+        createStat({
+          carId: 2,
+          name: 'DNF Driver',
+          guid: 'guid-2',
+          identity: { kind: 'guid', value: 'guid-2' },
+          position: 2,
+          finished: false,
+          completedLaps: 1,
+          consistency: null,
+          bestLap: 93000,
+          avgLap: 94000,
+          raceScore: 79,
+          totalTime: 0
+        })
+      ],
+      groupedIncidents: [],
+      minActiveDriversForSafetyGain: 3
+    })
+  );
+
+  assert.doesNotMatch(awards, /🧼 Más limpio|📈 Más consistente|🐢 Tortuga digna|No aplica|Sin datos/);
+});
+
+test('report hides tortuga digna when fastest-lap winner is also tortoise and there is no real competition', () => {
+  const awards = getAwardsValue(
+    buildRaceMessage({
+      fileName: 'sample-race.json',
+      race: createRace(),
+      stats: [
+        createStat({ name: 'Solo Pace', bestLap: 90000, avgLap: 95000, raceScore: 96, consistency: 120 }),
+        createStat({
+          carId: 2,
+          name: 'Quick DNF',
+          guid: 'guid-2',
+          identity: { kind: 'guid', value: 'guid-2' },
+          position: 2,
+          finished: false,
+          completedLaps: 1,
+          bestLap: 91000,
+          avgLap: 93000,
+          consistency: null,
+          raceScore: 85,
+          totalTime: 0
+        })
+      ],
+      groupedIncidents: [],
+      minActiveDriversForSafetyGain: 3
+    })
+  );
+
+  assert.doesNotMatch(awards, /🐢 Tortuga digna|No aplica|Sin datos/);
 });
