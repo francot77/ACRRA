@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { calculateRaceSafety, getSafetyCategory, updateSafetyRating } from '../src/parser/calculateSafety';
+import { applySafetyRatings, calculateRaceSafety, getSafetyCategory, updateSafetyRating } from '../src/parser/calculateSafety';
+import { calculateDriverStats } from '../src/parser/calculateDriverStats';
+import { formatConsistency } from '../src/parser/formatTime';
 import { groupIncidents } from '../src/parser/groupIncidents';
 import { NonRaceSessionError, parseRaceJson } from '../src/parser/parseRaceJson';
-import { ParsedCarCollisionEvent } from '../src/types/assetto';
+import { ParsedCarCollisionEvent, ParsedRace } from '../src/types/assetto';
 
 function loadSample(fileName: string): string {
   return readFileSync(resolve(process.cwd(), 'samples/results', fileName), 'utf8');
@@ -43,6 +45,13 @@ test('parseRaceJson rejects non-RACE sessions', () => {
     () => parseRaceJson(loadSample('2026_6_20_1_9_QUALIFY.json'), '2026_6_20_1_9_QUALIFY.json'),
     (error: unknown) => error instanceof NonRaceSessionError && error.message.includes('QUALIFY')
   );
+});
+
+test('parseRaceJson normalizes Events null to an empty list', () => {
+  const parsed = parseRaceJson(loadSample('2026_6_22_0_0_clean-null-events_RACE.json'), '2026_6_22_0_0_clean-null-events_RACE.json');
+
+  assert.deepEqual(parsed.events, []);
+  assert.equal(parsed.drivers.length, 1);
 });
 
 test('groupIncidents dedupes mirrored contact and splits separate incidents', () => {
@@ -92,3 +101,63 @@ test('safety formula, rolling rating, and categories follow the frozen contract'
     });
   }
 });
+
+test('inactive drivers do not receive awards or safety updates, while destructive DNF stays active and penalized', () => {
+  const race = createSyntheticRace();
+  const groupedIncidents = groupIncidents(race.events.filter((event): event is ParsedCarCollisionEvent => event.type === 'COLLISION_WITH_CAR'));
+  const stats = calculateDriverStats(race, groupedIncidents, 75);
+  const ratedStats = applySafetyRatings(stats, { 'dns-guid': 91, 'dnf-guid': 80 }, 75, 0.85);
+
+  const dns = ratedStats.find((entry) => entry.guid === 'dns-guid');
+  const destructiveDnf = ratedStats.find((entry) => entry.guid === 'dnf-guid');
+
+  assert.ok(dns);
+  assert.equal(dns.active, false);
+  assert.equal(dns.inactive, true);
+  assert.equal(dns.finished, false);
+  assert.equal(dns.raceScore, 0);
+  assert.equal(dns.oldSafetyRating, 91);
+  assert.equal(dns.newSafetyRating, 91);
+
+  assert.ok(destructiveDnf);
+  assert.equal(destructiveDnf.active, true);
+  assert.equal(destructiveDnf.inactive, false);
+  assert.equal(destructiveDnf.destructiveDnf, true);
+  assert.equal(destructiveDnf.finished, false);
+  assert.equal(destructiveDnf.raceScore, 59);
+  assert.equal(destructiveDnf.newSafetyRating, 76.85);
+});
+
+test('formatConsistency follows compact report presentation rules', () => {
+  assert.equal(formatConsistency(4516), '±4.516s');
+  assert.equal(formatConsistency(95880), '±1:35.880');
+  assert.equal(formatConsistency(null), 'Sin datos');
+});
+
+function createSyntheticRace(): ParsedRace {
+  return {
+    sourceFileName: 'synthetic-race.json',
+    trackName: 'monza',
+    trackConfig: '',
+    type: 'RACE',
+    raceLaps: 3,
+    carModel: 'lotus_exos_125_s1',
+    drivers: [
+      { carId: 1, name: 'DNS Driver', guid: 'dns-guid', identity: { kind: 'guid', value: 'dns-guid' }, carModel: 'car-a', position: 1, bestLap: null, totalTime: 0 },
+      { carId: 2, name: 'DNF Driver', guid: 'dnf-guid', identity: { kind: 'guid', value: 'dnf-guid' }, carModel: 'car-a', position: 2, bestLap: null, totalTime: 0 }
+    ],
+    lapsByCarId: new Map(),
+    events: [
+      createCarEvent({ index: 0, carId: 2, otherCarId: 3, driverName: 'DNF Driver', otherDriverName: 'Rival', impactSpeed: 90 }),
+      createCarEvent({ index: 1, carId: 3, otherCarId: 2, driverName: 'Rival', otherDriverName: 'DNF Driver', impactSpeed: 85 }),
+      {
+        index: 2,
+        type: 'COLLISION_WITH_ENV',
+        carId: 2,
+        driverIdentity: { kind: 'guid', value: 'dnf-guid' },
+        driverName: 'DNF Driver',
+        impactSpeed: 70
+      }
+    ]
+  };
+}

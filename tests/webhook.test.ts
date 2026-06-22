@@ -27,7 +27,11 @@ function createStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
     position: overrides.position ?? 1,
     completedLaps: overrides.completedLaps ?? 3,
     raceLaps: overrides.raceLaps ?? 3,
+    hasValidResult: overrides.hasValidResult ?? true,
+    active: overrides.active ?? true,
+    inactive: overrides.inactive ?? false,
     finished: overrides.finished ?? true,
+    destructiveDnf: overrides.destructiveDnf ?? false,
     bestLap: overrides.bestLap ?? 90000,
     avgLap: overrides.avgLap ?? 90500,
     idealLap: overrides.idealLap ?? 89000,
@@ -35,6 +39,8 @@ function createStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
     totalCuts: overrides.totalCuts ?? 0,
     carIncidentsGrouped: overrides.carIncidentsGrouped ?? 0,
     envHits: overrides.envHits ?? 0,
+    maxCarImpact: overrides.maxCarImpact ?? 0,
+    maxEnvImpact: overrides.maxEnvImpact ?? 0,
     maxImpact: overrides.maxImpact ?? 0,
     rawCollisionEvents: overrides.rawCollisionEvents ?? 0,
     'tyre usado más frecuente': overrides['tyre usado más frecuente'] ?? 'Soft',
@@ -169,4 +175,80 @@ test('configured webhook sends exactly one request with the required race report
   assert.match(awardsField?.value ?? '', /🪦 DNF destructivo/);
   assert.match(awardsField?.value ?? '', /📈 Más consistente/);
   assert.match(awardsField?.value ?? '', /🐢 Tortuga digna/);
+});
+
+test('report excludes DNS from awards, marks DNF and DNS, and formats impacts without raw milliseconds', () => {
+  const message = buildRaceMessage({
+    fileName: 'sample-race.json',
+    race: createRace(),
+    stats: [
+      createStat(),
+      createStat({
+        carId: 2,
+        name: 'DNS Driver',
+        guid: 'guid-2',
+        identity: { kind: 'guid', value: 'guid-2' },
+        position: 2,
+        completedLaps: 0,
+        hasValidResult: false,
+        active: false,
+        inactive: true,
+        finished: false,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        totalTime: 0,
+        raceScore: 0,
+        oldSafetyRating: 88,
+        newSafetyRating: 88
+      }),
+      createStat({
+        carId: 3,
+        name: 'Crash Driver',
+        guid: 'guid-3',
+        identity: { kind: 'guid', value: 'guid-3' },
+        position: 3,
+        completedLaps: 0,
+        hasValidResult: false,
+        active: true,
+        inactive: false,
+        finished: false,
+        destructiveDnf: true,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        envHits: 1,
+        maxCarImpact: 140,
+        maxEnvImpact: 70,
+        maxImpact: 140,
+        rawCollisionEvents: 3,
+        totalTime: 0,
+        raceScore: 59,
+        oldSafetyRating: 80,
+        newSafetyRating: 76.85
+      })
+    ],
+    groupedIncidents: [createGroupedIncident()]
+  });
+
+  const embed = message.webhookBody.embeds[0];
+  const awardsField = embed.fields.find((field) => field.name === 'Premios');
+  const podiumField = embed.fields.find((field) => field.name === 'Podio');
+  const incidentsField = embed.fields.find((field) => field.name === 'Resumen de incidentes');
+
+  const safetyField = embed.fields.find((field) => field.name === 'Safety actualizada');
+
+  assert.match(podiumField?.value ?? '', /DNS Driver \(DNS \/ sin actividad\)/);
+  assert.match(podiumField?.value ?? '', /Crash Driver \(DNF 0\/3 vueltas\)/);
+  assert.doesNotMatch(awardsField?.value ?? '', /DNS Driver/);
+  assert.match(awardsField?.value ?? '', /Crash Driver \(3 impactos antes de empezar\)/);
+  assert.match(awardsField?.value ?? '', /±0\.250s/);
+  assert.doesNotMatch(awardsField?.value ?? '', /\b\d+(?:\.\d+)? ms\b/);
+  assert.match(safetyField?.value ?? '', /P2 DNS Driver \(DNS \/ sin actividad\): 88\.00 -> 88\.00/);
+  assert.match(safetyField?.value ?? '', /P3 Crash Driver \(DNF 0\/3 vueltas\): 80\.00 -> 76\.85/);
+  assert.match(incidentsField?.value ?? '', /Impacto máximo entre autos: 140\.00/);
+  assert.match(incidentsField?.value ?? '', /Impacto máximo con entorno: 70\.00/);
+  assert.match(incidentsField?.value ?? '', /Impacto máximo total: 140\.00/);
 });

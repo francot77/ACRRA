@@ -1,6 +1,8 @@
 import { DriverRaceStats, SafetyCategory } from '../types/assetto';
 
-export function calculateRaceSafety(stats: Pick<DriverRaceStats, 'carIncidentsGrouped' | 'envHits' | 'totalCuts' | 'maxImpact' | 'finished' | 'completedLaps'>): number {
+export function calculateRaceSafety(
+  stats: Pick<DriverRaceStats, 'carIncidentsGrouped' | 'envHits' | 'totalCuts' | 'maxImpact' | 'finished' | 'destructiveDnf'>
+): number {
   let score = 100;
   score -= stats.carIncidentsGrouped * 10;
   score -= stats.envHits * 6;
@@ -8,7 +10,7 @@ export function calculateRaceSafety(stats: Pick<DriverRaceStats, 'carIncidentsGr
   if (stats.maxImpact > 60) score -= 10;
   if (stats.maxImpact > 120) score -= 20;
   if (stats.maxImpact > 200) score -= 35;
-  if (!stats.finished && stats.completedLaps === 0 && stats.carIncidentsGrouped + stats.envHits >= 3) score -= 15;
+  if (stats.destructiveDnf) score -= 15;
   if (stats.finished) score += 5;
   if (stats.finished && stats.envHits === 0) score += 5;
   return clamp(score, 0, 100);
@@ -35,6 +37,15 @@ export function applySafetyRatings(
 ): DriverRaceStats[] {
   return stats.map((entry) => {
     const oldSafetyRating = entry.guid ? historicalRatings[entry.guid] ?? defaultSafetyRating : defaultSafetyRating;
+    if (!entry.active) {
+      return {
+        ...entry,
+        raceScore: 0,
+        oldSafetyRating,
+        newSafetyRating: oldSafetyRating
+      };
+    }
+
     const raceScore = calculateRaceSafety(entry);
     const newSafetyRating = updateSafetyRating(oldSafetyRating, raceScore, safetyMemoryFactor);
 

@@ -26,15 +26,30 @@ npm run typecheck
 > tsc -p tsconfig.json --noEmit
 ```
 
-**Tests**: ✅ 13 passed / ✅ 0 failed / ⚠️ 0 skipped
+**Tests**: ✅ 18 passed / ✅ 0 failed / ⚠️ 0 skipped
 ```text
 npm test
 > motassettorr@0.1.0 test
 > tsx --test tests/**/*.test.ts
 
-pass 13
+tests 18
+pass 18
 fail 0
-duration_ms 283.4944
+duration_ms 3980.0585
+```
+
+**Additional runtime proofs**: ✅ Passed
+```text
+node -e <loadConfig assertion>
+- env-defaults-ok
+
+node -e <buildRaceMessage summary assertion>
+- fallback-summary-contract-ok
+
+node -e <two-pass replay against same SQLite>
+- first pass: QUALIFY -> non-race; 3 RACE files -> processed
+- second pass: QUALIFY -> non-race; 3 RACE files -> duplicate
+- counts stayed races=3, drivers=5, processed_files=3, race_driver_results=15
 ```
 
 **Coverage**: ➖ Not available
@@ -42,47 +57,47 @@ duration_ms 283.4944
 ### Spec Compliance Matrix
 | Requirement | Scenario | Test / Evidence | Result |
 |-------------|----------|-----------------|--------|
-| Runtime Configuration | Default environment contract | Static evidence only: `src/config.ts`, `.env.example`, compose files | ❌ UNTESTED |
-| Watch, Stability, And Parse Gate | File is still being written | Static evidence only: `src/watcher.ts` age + double-stat gate | ❌ UNTESTED |
-| Watch, Stability, And Parse Gate | File is invalid or not a race | `tests/parser-and-domain.test.ts` proves non-`RACE`; invalid/corrupt JSON retry path has no passing test | ⚠️ PARTIAL |
+| Runtime Configuration | Default environment contract | `node -e` runtime assertion on `loadConfig({})`; `.env.example`; compose defaults | ✅ COMPLIANT |
+| Watch, Stability, And Parse Gate | File is still being written | `tests/watcher.test.ts` proves delayed processing until stable | ✅ COMPLIANT |
+| Watch, Stability, And Parse Gate | File is invalid or not a race | `tests/watcher.test.ts` proves corrupt JSON retry then skip; `tests/parser-and-domain.test.ts` proves non-`RACE` rejection | ✅ COMPLIANT |
 | Parsing, Identity, Grouping, And Driver Stats | Symmetric car contact is duplicated in raw events | `tests/parser-and-domain.test.ts` grouped incident dedupe | ✅ COMPLIANT |
 | Parsing, Identity, Grouping, And Driver Stats | Driver has no GUID | `tests/persistence.test.ts` GUID-only persistence | ✅ COMPLIANT |
-| Safety Formula, Categories, And SQLite Persistence | Historical rating is updated | `tests/parser-and-domain.test.ts` proves formula helper, but not persisted old/race/new values through repository flow | ⚠️ PARTIAL |
-| Safety Formula, Categories, And SQLite Persistence | Processed file is seen again | `tests/persistence.test.ts` proves filename dedupe at SQLite boundary; watcher re-seen path remains untested | ⚠️ PARTIAL |
-| Webhook Delivery And Console Fallback | Webhook is configured | No passing mocked delivery test in repo | ❌ UNTESTED |
-| Webhook Delivery And Console Fallback | Webhook is empty | `tests/webhook.test.ts` fallback logs and does not crash | ✅ COMPLIANT |
-| Embed Shape And Deterministic Awards | Standard classified race | Static evidence only: `src/discord/buildRaceMessage.ts` | ❌ UNTESTED |
-| Embed Shape And Deterministic Awards | Webhook fallback summary | `tests/webhook.test.ts` proves title/footer presence and no crash, but not full parity of required report blocks | ⚠️ PARTIAL |
+| Safety Formula, Categories, And SQLite Persistence | Historical rating is updated | `tests/persistence.test.ts` proves `old_safety`, `race_score`, `new_safety` persistence for an existing GUID-backed driver | ✅ COMPLIANT |
+| Safety Formula, Categories, And SQLite Persistence | Processed file is seen again | `tests/persistence.test.ts`; `tests/watcher.test.ts`; two-pass replay against same SQLite | ✅ COMPLIANT |
+| Webhook Delivery And Console Fallback | Webhook is configured | `tests/webhook.test.ts` proves exactly one HTTP request | ✅ COMPLIANT |
+| Webhook Delivery And Console Fallback | Webhook is empty | `tests/webhook.test.ts` proves console fallback without crash | ✅ COMPLIANT |
+| Embed Shape And Deterministic Awards | Standard classified race | `tests/webhook.test.ts` asserts title, footer, required fields, and deterministic award labels | ✅ COMPLIANT |
+| Embed Shape And Deterministic Awards | Webhook fallback summary | `tests/webhook.test.ts` plus `node -e` summary assertion prove required report blocks in fallback text | ✅ COMPLIANT |
 
-**Compliance summary**: 3/11 scenarios compliant, 4/11 partial, 4/11 untested.
+**Compliance summary**: 11/11 scenarios compliant.
 
 ### Correctness (Static And Runtime Evidence)
 | Requirement | Status | Notes |
 |------------|--------|-------|
-| Exact env vars and defaults | ✅ Implemented | `src/config.ts` defaults and `.env.example` / compose values match the corrected spec, including host path vars. |
-| Watcher stability gate and duplicate prevention | ⚠️ Partially proven | `src/watcher.ts` implements age gate, second stat, retry scheduling, and pre-process duplicate skip; automated tests do not exercise this path. |
-| Non-RACE skip behavior | ✅ Proven | Parser test rejects `QUALIFY`; replay command returned `non-race` and did not create persistence rows for that file. |
-| Parser validation and placeholder filtering | ⚠️ Partially proven | Placeholder filtering is covered by test; corrupt JSON / Zod retry behavior is only statically verified. |
-| GUID-only persistence | ✅ Proven | Repository test persists only GUID-backed drivers; temp identities stay out of `drivers` and `race_driver_results`. |
-| Grouped incidents behavior | ✅ Proven | Grouping test verifies mirrored event dedupe and split of distinct incidents. |
-| Per-driver stats and formulas | ⚠️ Partially proven | Safety formula is covered; `calculateDriverStats.ts` exact field derivation is not directly tested. |
-| Discord message contract and empty-webhook fallback | ⚠️ Partially proven | Empty-webhook fallback is tested; configured webhook path and full embed/report contract are not. |
-| Docker / Compose / README contract | ✅ Implemented | Files exist and align with required mounts, defaults, and command documentation, but are not runtime-tested. |
-| Persistence across restart / re-run via SQLite | ✅ Runtime-evidenced | Two-pass replay against the same DB produced counts `races=3, drivers=5, processed=3, results=15` before and after rerun, with second pass returning only duplicates. |
-| New automated test layer materially covers spec | ⚠️ Partial | The prior "no tests" failure is fixed; current test layer materially covers parser/grouping/safety/persistence fallback, but not watcher, env contract, configured webhook, or full message contract. |
+| Exact env vars and defaults | ✅ Proven | Runtime `loadConfig({})` assertion matched the frozen defaults; `.env.example` and both compose files expose the required keys. |
+| Watcher stability gate and duplicate prevention | ✅ Proven | Watcher integration tests cover delayed parse, corrupt JSON retry/skip, and duplicate suppression. |
+| Non-RACE skip behavior | ✅ Proven | Parser test and two-pass replay both returned `non-race` for the `QUALIFY` sample without persistence. |
+| Parser validation and placeholder filtering | ✅ Proven materially | Parser test proves placeholder filtering on real sample; corrupt JSON retry/skip path is runtime-tested in watcher integration. |
+| GUID-only persistence decision | ✅ Proven | Persistence test confirms GUID-less drivers stay out of `drivers` and `race_driver_results`. |
+| Grouped incidents behavior | ✅ Proven | Grouping test verifies mirrored-contact dedupe and split of distinct incidents. |
+| Per-driver stats and formulas | ✅ Proven materially | Safety formulas are directly asserted; processor-level persistence uses `calculateDriverStats` output end-to-end. Focused assertions for every derived stat field are still thin. |
+| Discord message contract and empty-webhook + configured-webhook paths | ✅ Proven | Tests cover both paths, exactly one webhook request, required fields, footer, and awards; fallback summary also has runtime proof. |
+| Docker / Compose / README contract | ✅ Implemented | README and both compose files match the frozen env, mount, and command contract. This remained static verification only. |
+| Persistence across restart / re-run via SQLite | ✅ Runtime-proven | Two passes against the same SQLite file preserved counts and returned duplicates on rerun. |
+| New automated test layer materially covers critical spec scenarios | ✅ Yes | The repo now has passing watcher, persistence, parser/domain, and notifier layers that cover the previous verify blockers. |
 
 ### Coherence (Design)
 | Decision | Followed? | Notes |
 |----------|-----------|-------|
 | Single worker pipeline | ✅ Yes | `src/index.ts` wires parse -> group -> stats -> safety -> persist -> notify. |
-| Zod validation at file boundary | ✅ Yes | `src/types/assetto.ts` and `parseRaceJson.ts`. |
-| Duplicate strategy via `processed_files.file_name` | ✅ Yes | Repository checks filename before insert and during transaction; replay rerun stayed idempotent. |
+| Zod validation at file boundary | ✅ Yes | `src/types/assetto.ts` and `src/parser/parseRaceJson.ts`. |
+| Duplicate strategy via `processed_files.file_name` | ✅ Yes | Repository checks filename before insert and replay stayed idempotent. |
 | Missing GUID stays out of `drivers` history | ✅ Yes | GUID-less drivers are skipped during persistence. |
-| Watch only files matching `WATCH_GLOB` | ⚠️ Partial | `src/watcher.ts` watches the directory and filters file names in code instead of initializing chokidar with the glob itself. |
+| Watch only files matching `WATCH_GLOB` | ⚠️ Partial | `src/watcher.ts` watches the directory and filters matching files in code rather than initializing chokidar with the glob itself. Behavior is correct; implementation shape still drifts from the design note. |
 
 ### Runtime Replay Evidence
 ```text
-Replay command: node -e <processor replay script>
+Replay command: node -e <two-pass processor replay script>
 
 First pass results:
 - 2026_6_20_1_9_QUALIFY.json -> non-race
@@ -109,24 +124,19 @@ Counts after second pass:
 
 ### Issues Found
 **CRITICAL**
-- The previous FAIL reason is resolved: the repo now has a real automated test layer and `npm test` passes. However, the change still fails SDD verify because 8 of 11 spec scenarios remain only partial or untested, including core watcher-gate behavior, configured-webhook delivery, the standard Discord report contract, and the exact env/default scenario.
-- `src/watcher.ts` implements the stability and invalid-JSON retry logic, but there is still no passing automated test that proves the worker delays a still-growing file and retries corrupt JSON without crashing. That is a core ingestion safety requirement, not optional polish.
-- `src/discord/buildRaceMessage.ts` and `src/discord/sendWebhook.ts` still lack a passing in-repo verification of the configured-webhook path and the full embed contract. The fallback path is tested; the actual delivery contract is not proven.
-- Historical safety persistence is only partially verified. The helper formula is tested, but there is no passing test proving `oldSafety`, `raceScore`, and `newSafety` are persisted correctly through the repository or end-to-end processor flow for an existing GUID-backed driver.
+- None. The prior FAIL condition is resolved.
 
 **WARNING**
-- `src/watcher.ts` watches `RESULTS_DIR` and filters `WATCH_GLOB` in code instead of watching the glob directly. Processing behavior is correct, but this is still a spec/design drift.
-- `calculateDriverStats.ts` is not directly covered by tests for exact output shape or formulas such as `avgLap`, `idealLap`, `consistency`, tyre mode, and raw collision counting. The hardest domain math is still inferred rather than proved.
-- `README.md`, `docker-compose.yml`, and `docker-compose.oracle.yml` match the contract statically, but there is no automated ops verification. A future edit could silently drift these files without a test failing.
-- Node 24 `node:sqlite` emits an experimental warning during tests and replay. It does not fail verification today, but it remains an operational dependency risk.
+- `src/watcher.ts` still watches `RESULTS_DIR` and filters `WATCH_GLOB` in code instead of initializing chokidar with the glob directly. Runtime behavior passed, but the implementation shape still differs from the documented design choice.
+- `calculateDriverStats.ts` is now materially exercised through processor flow, but the test suite still lacks focused assertions for every derived stat field such as `avgLap`, `idealLap`, `consistency`, and tyre mode. This is a coverage-granularity warning, not a current spec failure.
+- Docker/Compose/README compliance was verified statically, not by a containerized runtime check in this session.
+- Node 24 `node:sqlite` still emits an experimental warning during runtime checks and tests.
 
 **SUGGESTION**
-- Add a watcher integration test that writes a JSON file in multiple chunks and proves the age gate, size-stability recheck, invalid-JSON retry, and duplicate suppression logs/behavior.
-- Add a notifier test with mocked `fetch` for the non-empty webhook path and assert exactly one HTTP request plus the expected embed title, required fields, footer, and deterministic awards.
-- Add at least one processor-level integration test that seeds an existing driver safety rating, processes a real sample, and asserts persisted `old_safety`, `race_score`, and `new_safety` rows.
-- Add a thin config/ops contract test that snapshots the exact env defaults and required compose values so the operational contract cannot drift silently.
+- Add one focused test that snapshots a real driver's derived stat object so future edits cannot silently drift `avgLap`, `idealLap`, `consistency`, tyre mode, or raw collision counting.
+- Add one lightweight container smoke check when CI exists, so README/compose contract regressions fail automatically.
 
 ### Verdict
-FAIL
+PASS WITH WARNINGS
 
-The prior FAIL was materially improved and the verification-hardening slice succeeded in adding real tests. But this is still not a full SDD pass: too many corrected-spec scenarios remain unproven by passing runtime tests.
+The previous FAIL is resolved. The final verification-gap closure slice materially closed the missing runtime proofs: watcher behavior, configured webhook delivery, fallback summary contract, historical safety persistence, and rerun idempotency are now backed by passing execution evidence.

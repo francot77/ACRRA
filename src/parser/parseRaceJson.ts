@@ -19,6 +19,7 @@ export class NonRaceSessionError extends Error {
 
 export function parseRaceJson(input: string | unknown, sourceFileName = 'unknown.json'): ParsedRace {
   const rawValue = typeof input === 'string' ? JSON.parse(input) : input;
+  normalizeSessionEvents(rawValue);
   const session = rawSessionSchema.parse(rawValue);
 
   if (session.Type !== 'RACE') {
@@ -110,6 +111,17 @@ export function parseRaceJson(input: string | unknown, sourceFileName = 'unknown
     lapsByCarId,
     events
   };
+}
+
+function normalizeSessionEvents(value: unknown): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return;
+  }
+
+  const session = value as { Events?: unknown };
+  if (session.Events == null) {
+    session.Events = [];
+  }
 }
 
 function isPlaceholderResult(result: RawResult): boolean {

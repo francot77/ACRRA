@@ -99,3 +99,14 @@
 - Added processor-level persistence coverage that seeds an existing GUID-backed driver, proves `oldSafety` is read from history, and verifies `raceScore` / `newSafety` persistence in both `race_driver_results` and `drivers`.
 - No production code changes were required for this slice; the existing implementation satisfied the corrected spec once the missing runtime tests were added.
 - Verification after this slice: `npm test` (18/18 passing), `npm run typecheck`, and `npm run build` all pass.
+
+## AC Race Monitor Bugfix Repair Slice
+
+- Normalized `Events: null | undefined` to `[]` before Zod validation so clean race exports are accepted instead of rejected.
+- Centralized participation flags in `calculateDriverStats.ts`: `hasValidResult`, `active`, `inactive`, `finished`, and `destructiveDnf` now drive safety and reporting consistently.
+- `finished` now follows `completedLaps >= raceLaps`; DNF/DNS labels are rendered without changing official result order.
+- Inactive/DNS entries now keep `raceScore = 0`, preserve `oldSafetyRating === newSafetyRating`, are excluded from awards, and no longer mutate the historical `drivers` table.
+- Destructive DNF now remains active and receives the frozen extra penalty via `destructiveDnf` instead of grouped-incident heuristics.
+- Discord presentation no longer emits raw `ms` values for consistency; it uses `formatLapTime`, `formatGap`, and `formatConsistency` helpers while keeping internal calculations in milliseconds.
+- Incident summary now reports separate max car-car, max environment, and max total impact values.
+- Added regression coverage for null events, inactive/DNS award exclusion, inactive safety no-op, destructive DNF penalty, formatted Discord output, and separated impact summary lines.

@@ -154,7 +154,11 @@ export interface DriverStats {
   position: number;
   completedLaps: number;
   raceLaps: number;
+  hasValidResult: boolean;
+  active: boolean;
+  inactive: boolean;
   finished: boolean;
+  destructiveDnf: boolean;
   bestLap: number | null;
   avgLap: number | null;
   idealLap: number | null;
@@ -162,6 +166,8 @@ export interface DriverStats {
   totalCuts: number;
   carIncidentsGrouped: number;
   envHits: number;
+  maxCarImpact: number;
+  maxEnvImpact: number;
   maxImpact: number;
   rawCollisionEvents: number;
   'tyre usado más frecuente': string | null;

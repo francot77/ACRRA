@@ -38,7 +38,11 @@ function createStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
     position: overrides.position ?? 1,
     completedLaps: overrides.completedLaps ?? 3,
     raceLaps: overrides.raceLaps ?? 3,
+    hasValidResult: overrides.hasValidResult ?? true,
+    active: overrides.active ?? true,
+    inactive: overrides.inactive ?? false,
     finished: overrides.finished ?? true,
+    destructiveDnf: overrides.destructiveDnf ?? false,
     bestLap: overrides.bestLap ?? 90000,
     avgLap: overrides.avgLap ?? 90500,
     idealLap: overrides.idealLap ?? 89000,
@@ -46,6 +50,8 @@ function createStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
     totalCuts: overrides.totalCuts ?? 0,
     carIncidentsGrouped: overrides.carIncidentsGrouped ?? 0,
     envHits: overrides.envHits ?? 0,
+    maxCarImpact: overrides.maxCarImpact ?? 0,
+    maxEnvImpact: overrides.maxEnvImpact ?? 0,
     maxImpact: overrides.maxImpact ?? 0,
     rawCollisionEvents: overrides.rawCollisionEvents ?? 0,
     'tyre usado más frecuente': overrides['tyre usado más frecuente'] ?? 'Soft',
@@ -129,6 +135,75 @@ test('persistence suppresses duplicate processing by SQLite filename tracking', 
   assert.deepEqual(second, { status: 'duplicate' });
   assert.equal((context.database.prepare('SELECT COUNT(*) AS count FROM races').get() as { count: number }).count, 1);
   assert.equal((context.database.prepare('SELECT COUNT(*) AS count FROM processed_files').get() as { count: number }).count, 1);
+});
+
+test('inactive DNS drivers keep race rows but do not update historical safety', (t) => {
+  const context = createTempDb();
+  t.after(context.close);
+
+  context.database.prepare(
+    `INSERT INTO drivers (
+      guid,
+      name,
+      safety_rating,
+      races,
+      total_car_incidents,
+      total_env_hits,
+      total_cuts,
+      max_impact,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('guid-inactive', 'Inactive Driver', 88, 4, 1, 0, 0, 20, '2026-06-21T00:00:00.000Z');
+
+  const result = context.repositories.races.persist({
+    fileName: 'inactive-guid.json',
+    filePath: '/tmp/inactive-guid.json',
+    fileHash: 'hash-inactive',
+    processedAt: '2026-06-22T00:00:00.000Z',
+    race: createRace('inactive-guid.json'),
+    stats: [
+      createStat({
+        guid: 'guid-inactive',
+        name: 'Inactive Driver',
+        completedLaps: 0,
+        hasValidResult: false,
+        active: false,
+        inactive: true,
+        finished: false,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        totalTime: 0,
+        raceScore: 0,
+        oldSafetyRating: 88,
+        newSafetyRating: 88
+      })
+    ]
+  });
+
+  const persistedDriver = context.database.prepare(
+    'SELECT safety_rating, races, total_car_incidents, total_env_hits, total_cuts, max_impact FROM drivers WHERE guid = ?'
+  ).get('guid-inactive') as {
+    safety_rating: number;
+    races: number;
+    total_car_incidents: number;
+    total_env_hits: number;
+    total_cuts: number;
+    max_impact: number;
+  };
+  const persistedResult = context.database.prepare(
+    'SELECT COUNT(*) AS count FROM race_driver_results WHERE guid = ?'
+  ).get('guid-inactive') as { count: number };
+
+  assert.deepEqual(result, { status: 'inserted', raceId: 1, persistedDrivers: 0 });
+  assert.equal(persistedDriver.safety_rating, 88);
+  assert.equal(persistedDriver.races, 4);
+  assert.equal(persistedDriver.total_car_incidents, 1);
+  assert.equal(persistedDriver.total_env_hits, 0);
+  assert.equal(persistedDriver.total_cuts, 0);
+  assert.equal(persistedDriver.max_impact, 20);
+  assert.equal(persistedResult.count, 0);
 });
 
 test('processor persists oldSafety, raceScore, and newSafety for existing GUID-backed drivers', async (t) => {

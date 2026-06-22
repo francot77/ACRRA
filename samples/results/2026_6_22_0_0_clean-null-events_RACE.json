@@ -1,0 +1,77 @@
+{
+  "TrackName": "monza",
+  "TrackConfig": "",
+  "Type": "RACE",
+  "DurationSecs": 0,
+  "RaceLaps": 3,
+  "Cars": [
+    {
+      "CarId": 0,
+      "Driver": {
+        "Name": "Clean Driver",
+        "Team": "",
+        "Nation": "AR",
+        "Guid": "guid-clean",
+        "GuidsList": []
+      },
+      "Model": "lotus_exos_125_s1",
+      "Skin": "default",
+      "BallastKG": 0,
+      "Restrictor": 0
+    }
+  ],
+  "Result": [
+    {
+      "DriverName": "Clean Driver",
+      "DriverGuid": "guid-clean",
+      "CarId": 0,
+      "CarModel": "lotus_exos_125_s1",
+      "BestLap": 90000,
+      "TotalTime": 270000,
+      "BallastKG": 0,
+      "Restrictor": 0
+    }
+  ],
+  "Laps": [
+    {
+      "DriverName": "Clean Driver",
+      "DriverGuid": "guid-clean",
+      "CarId": 0,
+      "CarModel": "lotus_exos_125_s1",
+      "Timestamp": 90000,
+      "LapTime": 90000,
+      "Sectors": [30000, 30000, 30000],
+      "Cuts": 0,
+      "BallastKG": 0,
+      "Tyre": "Soft",
+      "Restrictor": 0
+    },
+    {
+      "DriverName": "Clean Driver",
+      "DriverGuid": "guid-clean",
+      "CarId": 0,
+      "CarModel": "lotus_exos_125_s1",
+      "Timestamp": 180000,
+      "LapTime": 90000,
+      "Sectors": [30000, 30000, 30000],
+      "Cuts": 0,
+      "BallastKG": 0,
+      "Tyre": "Soft",
+      "Restrictor": 0
+    },
+    {
+      "DriverName": "Clean Driver",
+      "DriverGuid": "guid-clean",
+      "CarId": 0,
+      "CarModel": "lotus_exos_125_s1",
+      "Timestamp": 270000,
+      "LapTime": 90000,
+      "Sectors": [30000, 30000, 30000],
+      "Cuts": 0,
+      "BallastKG": 0,
+      "Tyre": "Soft",
+      "Restrictor": 0
+    }
+  ],
+  "Events": null
+}

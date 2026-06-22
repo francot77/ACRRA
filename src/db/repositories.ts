@@ -141,7 +141,7 @@ export function createRepositories(database: AppDatabase) {
           let persistedDrivers = 0;
 
           for (const stat of input.stats) {
-            if (!stat.guid) {
+            if (!stat.guid || !stat.active) {
               continue;
             }
 
