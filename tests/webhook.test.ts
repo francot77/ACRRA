@@ -47,7 +47,8 @@ function createStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
     totalTime: overrides.totalTime ?? 300000,
     raceScore: overrides.raceScore ?? 95,
     oldSafetyRating: overrides.oldSafetyRating ?? 75,
-    newSafetyRating: overrides.newSafetyRating ?? 78
+    newSafetyRating: overrides.newSafetyRating ?? 78,
+    safetyChangeReason: overrides.safetyChangeReason ?? 'updated'
   };
 }
 
@@ -79,7 +80,8 @@ test('empty webhook falls back to console logging without crashing', async (t) =
     fileName: 'sample-race.json',
     race: createRace(),
     stats: [createStat()],
-    groupedIncidents: []
+    groupedIncidents: [],
+    minActiveDriversForSafetyGain: 3
   });
 
   const result = await sendWebhook('', message);
@@ -136,7 +138,8 @@ test('configured webhook sends exactly one request with the required race report
         newSafetyRating: 77.3
       })
     ],
-    groupedIncidents: [createGroupedIncident()]
+    groupedIncidents: [createGroupedIncident()],
+    minActiveDriversForSafetyGain: 3
   });
 
   const result = await sendWebhook('https://discord.example/webhook', message);
@@ -201,7 +204,8 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
         totalTime: 0,
         raceScore: 0,
         oldSafetyRating: 88,
-        newSafetyRating: 88
+        newSafetyRating: 88,
+        safetyChangeReason: 'inactive'
       }),
       createStat({
         carId: 3,
@@ -227,10 +231,12 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
         totalTime: 0,
         raceScore: 59,
         oldSafetyRating: 80,
-        newSafetyRating: 76.85
+        newSafetyRating: 76.85,
+        safetyChangeReason: 'updated'
       })
     ],
-    groupedIncidents: [createGroupedIncident()]
+    groupedIncidents: [createGroupedIncident()],
+    minActiveDriversForSafetyGain: 3
   });
 
   const embed = message.webhookBody.embeds[0];
@@ -239,6 +245,7 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
   const incidentsField = embed.fields.find((field) => field.name === 'Resumen de incidentes');
 
   const safetyField = embed.fields.find((field) => field.name === 'Safety actualizada');
+  const dnsField = embed.fields.find((field) => field.name === 'DNS / sin cambios');
 
   assert.match(podiumField?.value ?? '', /DNS Driver \(DNS \/ sin actividad\)/);
   assert.match(podiumField?.value ?? '', /Crash Driver \(DNF 0\/3 vueltas\)/);
@@ -246,9 +253,60 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
   assert.match(awardsField?.value ?? '', /Crash Driver \(3 impactos antes de empezar\)/);
   assert.match(awardsField?.value ?? '', /±0\.250s/);
   assert.doesNotMatch(awardsField?.value ?? '', /\b\d+(?:\.\d+)? ms\b/);
-  assert.match(safetyField?.value ?? '', /P2 DNS Driver \(DNS \/ sin actividad\): 88\.00 -> 88\.00/);
+  assert.doesNotMatch(safetyField?.value ?? '', /DNS Driver/);
   assert.match(safetyField?.value ?? '', /P3 Crash Driver \(DNF 0\/3 vueltas\): 80\.00 -> 76\.85/);
+  assert.match(dnsField?.value ?? '', /P2 DNS Driver \(DNS \/ sin actividad\)/);
   assert.match(incidentsField?.value ?? '', /Impacto máximo entre autos: 140\.00/);
   assert.match(incidentsField?.value ?? '', /Impacto máximo con entorno: 70\.00/);
   assert.match(incidentsField?.value ?? '', /Impacto máximo total: 140\.00/);
+});
+
+test('report explains unchanged safety below the active-driver minimum and formats tortuga digna as M:SS.mmm', () => {
+  const message = buildRaceMessage({
+    fileName: 'sample-race.json',
+    race: createRace(),
+    stats: [
+      createStat({
+        name: 'Solo Driver',
+        bestLap: 91513,
+        avgLap: 91513,
+        oldSafetyRating: 75,
+        newSafetyRating: 75,
+        safetyChangeReason: 'min-active-drivers'
+      }),
+      createStat({
+        carId: 2,
+        name: 'DNS Driver',
+        guid: 'guid-2',
+        identity: { kind: 'guid', value: 'guid-2' },
+        position: 2,
+        completedLaps: 0,
+        hasValidResult: false,
+        active: false,
+        inactive: true,
+        finished: false,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        totalTime: 0,
+        raceScore: 0,
+        oldSafetyRating: 88,
+        newSafetyRating: 88,
+        safetyChangeReason: 'inactive'
+      })
+    ],
+    groupedIncidents: [],
+    minActiveDriversForSafetyGain: 3
+  });
+
+  const embed = message.webhookBody.embeds[0];
+  const awardsField = embed.fields.find((field) => field.name === 'Premios');
+  const safetyField = embed.fields.find((field) => field.name === 'Safety actualizada');
+  const unchangedField = embed.fields.find((field) => field.name === 'Safety sin cambios');
+
+  assert.match(awardsField?.value ?? '', /🐢 Tortuga digna: Solo Driver \(1:31\.513\)/);
+  assert.equal(safetyField?.value, 'Sin cambios');
+  assert.match(unchangedField?.value ?? '', /mínimo 3 pilotos activos requerido para ganar Safety\./);
+  assert.match(unchangedField?.value ?? '', /P1 Solo Driver/);
 });

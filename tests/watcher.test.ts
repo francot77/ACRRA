@@ -19,6 +19,8 @@ function createConfig(resultsDir: string): AppConfig {
     watchGlob: '*RACE*.json',
     defaultSafetyRating: 75,
     safetyMemoryFactor: 0.85,
+    minActiveDriversForSafetyGain: 3,
+    allowSafetyLossBelowMinDrivers: true,
     nodeEnv: 'test'
   };
 }

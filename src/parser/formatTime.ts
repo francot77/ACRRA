@@ -13,7 +13,16 @@ export function formatTime(milliseconds: number | null | undefined): string {
 }
 
 export function formatLapTime(milliseconds: number | null | undefined): string {
-  return formatTime(milliseconds);
+  if (milliseconds == null || milliseconds >= NO_TIME_SENTINEL) {
+    return '--:--.---';
+  }
+
+  const rounded = Math.round(milliseconds);
+  const minutes = Math.floor(rounded / 60000);
+  const seconds = Math.floor((rounded % 60000) / 1000);
+  const millis = rounded % 1000;
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
 }
 
 export function formatGap(milliseconds: number | null | undefined): string {

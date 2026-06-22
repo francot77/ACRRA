@@ -20,6 +20,13 @@ export function updateSafetyRating(oldSafety: number, raceScore: number, safetyM
   return Number((oldSafety * safetyMemoryFactor + raceScore * (1 - safetyMemoryFactor)).toFixed(2));
 }
 
+type ApplySafetyRatingsOptions = {
+  defaultSafetyRating?: number;
+  safetyMemoryFactor?: number;
+  minActiveDriversForSafetyGain?: number;
+  allowSafetyLossBelowMinDrivers?: boolean;
+};
+
 export function getSafetyCategory(score: number): SafetyCategory {
   if (score >= 90) return '🧼 Limpio';
   if (score >= 75) return '✅ Correcto';
@@ -32,9 +39,17 @@ export function getSafetyCategory(score: number): SafetyCategory {
 export function applySafetyRatings(
   stats: DriverRaceStats[],
   historicalRatings: Partial<Record<string, number>> = {},
-  defaultSafetyRating = 75,
-  safetyMemoryFactor = 0.85
+  options: ApplySafetyRatingsOptions = {}
 ): DriverRaceStats[] {
+  const {
+    defaultSafetyRating = 75,
+    safetyMemoryFactor = 0.85,
+    minActiveDriversForSafetyGain = 1,
+    allowSafetyLossBelowMinDrivers = true
+  } = options;
+  const activeDrivers = stats.filter((entry) => entry.active).length;
+  const canGainSafety = activeDrivers >= minActiveDriversForSafetyGain;
+
   return stats.map((entry) => {
     const oldSafetyRating = entry.guid ? historicalRatings[entry.guid] ?? defaultSafetyRating : defaultSafetyRating;
     if (!entry.active) {
@@ -42,18 +57,23 @@ export function applySafetyRatings(
         ...entry,
         raceScore: 0,
         oldSafetyRating,
-        newSafetyRating: oldSafetyRating
+        newSafetyRating: oldSafetyRating,
+        safetyChangeReason: 'inactive'
       };
     }
 
     const raceScore = calculateRaceSafety(entry);
-    const newSafetyRating = updateSafetyRating(oldSafetyRating, raceScore, safetyMemoryFactor);
+    const candidateSafetyRating = updateSafetyRating(oldSafetyRating, raceScore, safetyMemoryFactor);
+    const isSafetyLoss = candidateSafetyRating < oldSafetyRating;
+    const shouldBlockChange = !canGainSafety && (!isSafetyLoss || !allowSafetyLossBelowMinDrivers);
+    const newSafetyRating = shouldBlockChange ? oldSafetyRating : candidateSafetyRating;
 
     return {
       ...entry,
       raceScore,
       oldSafetyRating,
-      newSafetyRating
+      newSafetyRating,
+      safetyChangeReason: shouldBlockChange ? 'min-active-drivers' : 'updated'
     };
   });
 }

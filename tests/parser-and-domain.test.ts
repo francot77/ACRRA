@@ -4,10 +4,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { applySafetyRatings, calculateRaceSafety, getSafetyCategory, updateSafetyRating } from '../src/parser/calculateSafety';
 import { calculateDriverStats } from '../src/parser/calculateDriverStats';
-import { formatConsistency } from '../src/parser/formatTime';
+import { formatConsistency, formatLapTime } from '../src/parser/formatTime';
 import { groupIncidents } from '../src/parser/groupIncidents';
 import { NonRaceSessionError, parseRaceJson } from '../src/parser/parseRaceJson';
-import { ParsedCarCollisionEvent, ParsedRace } from '../src/types/assetto';
+import { DriverRaceStats, ParsedCarCollisionEvent, ParsedRace } from '../src/types/assetto';
 
 function loadSample(fileName: string): string {
   return readFileSync(resolve(process.cwd(), 'samples/results', fileName), 'utf8');
@@ -106,7 +106,7 @@ test('inactive drivers do not receive awards or safety updates, while destructiv
   const race = createSyntheticRace();
   const groupedIncidents = groupIncidents(race.events.filter((event): event is ParsedCarCollisionEvent => event.type === 'COLLISION_WITH_CAR'));
   const stats = calculateDriverStats(race, groupedIncidents, 75);
-  const ratedStats = applySafetyRatings(stats, { 'dns-guid': 91, 'dnf-guid': 80 }, 75, 0.85);
+  const ratedStats = applySafetyRatings(stats, { 'dns-guid': 91, 'dnf-guid': 80 }, { defaultSafetyRating: 75, safetyMemoryFactor: 0.85 });
 
   const dns = ratedStats.find((entry) => entry.guid === 'dns-guid');
   const destructiveDnf = ratedStats.find((entry) => entry.guid === 'dnf-guid');
@@ -118,6 +118,7 @@ test('inactive drivers do not receive awards or safety updates, while destructiv
   assert.equal(dns.raceScore, 0);
   assert.equal(dns.oldSafetyRating, 91);
   assert.equal(dns.newSafetyRating, 91);
+  assert.equal(dns.safetyChangeReason, 'inactive');
 
   assert.ok(destructiveDnf);
   assert.equal(destructiveDnf.active, true);
@@ -126,6 +127,53 @@ test('inactive drivers do not receive awards or safety updates, while destructiv
   assert.equal(destructiveDnf.finished, false);
   assert.equal(destructiveDnf.raceScore, 59);
   assert.equal(destructiveDnf.newSafetyRating, 76.85);
+  assert.equal(destructiveDnf.safetyChangeReason, 'updated');
+});
+
+test('clean single-active-driver race does not gain safety when the minimum active driver count is 3', () => {
+  const ratedStats = applySafetyRatings(
+    [
+      createBaseStat({ guid: 'solo-guid', name: 'Solo Driver', oldSafetyRating: 75, newSafetyRating: 75 }),
+      createBaseStat({
+        guid: 'dns-guid',
+        name: 'DNS Driver',
+        active: false,
+        inactive: true,
+        finished: false,
+        completedLaps: 0,
+        hasValidResult: false,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        totalTime: 0,
+        raceScore: 0,
+        oldSafetyRating: 88,
+        newSafetyRating: 88,
+        safetyChangeReason: 'inactive'
+      })
+    ],
+    { 'solo-guid': 75, 'dns-guid': 88 },
+    {
+      defaultSafetyRating: 75,
+      safetyMemoryFactor: 0.85,
+      minActiveDriversForSafetyGain: 3,
+      allowSafetyLossBelowMinDrivers: true
+    }
+  );
+
+  const solo = ratedStats.find((entry) => entry.guid === 'solo-guid');
+  const dns = ratedStats.find((entry) => entry.guid === 'dns-guid');
+
+  assert.ok(solo);
+  assert.equal(solo.raceScore, 100);
+  assert.equal(solo.oldSafetyRating, 75);
+  assert.equal(solo.newSafetyRating, 75);
+  assert.equal(solo.safetyChangeReason, 'min-active-drivers');
+
+  assert.ok(dns);
+  assert.equal(dns.newSafetyRating, 88);
+  assert.equal(dns.safetyChangeReason, 'inactive');
 });
 
 test('formatConsistency follows compact report presentation rules', () => {
@@ -133,6 +181,44 @@ test('formatConsistency follows compact report presentation rules', () => {
   assert.equal(formatConsistency(95880), '±1:35.880');
   assert.equal(formatConsistency(null), 'Sin datos');
 });
+
+test('formatLapTime uses lap-style M:SS.mmm formatting', () => {
+  assert.equal(formatLapTime(91513), '1:31.513');
+});
+
+function createBaseStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
+  return {
+    carId: overrides.carId ?? 1,
+    name: overrides.name ?? 'Driver',
+    guid: overrides.guid ?? 'guid-1',
+    identity: overrides.identity ?? { kind: 'guid', value: String(overrides.guid ?? 'guid-1') },
+    position: overrides.position ?? 1,
+    completedLaps: overrides.completedLaps ?? 3,
+    raceLaps: overrides.raceLaps ?? 3,
+    hasValidResult: overrides.hasValidResult ?? true,
+    active: overrides.active ?? true,
+    inactive: overrides.inactive ?? false,
+    finished: overrides.finished ?? true,
+    destructiveDnf: overrides.destructiveDnf ?? false,
+    bestLap: overrides.bestLap ?? 90000,
+    avgLap: overrides.avgLap ?? 90500,
+    idealLap: overrides.idealLap ?? 89000,
+    consistency: overrides.consistency ?? 250,
+    totalCuts: overrides.totalCuts ?? 0,
+    carIncidentsGrouped: overrides.carIncidentsGrouped ?? 0,
+    envHits: overrides.envHits ?? 0,
+    maxCarImpact: overrides.maxCarImpact ?? 0,
+    maxEnvImpact: overrides.maxEnvImpact ?? 0,
+    maxImpact: overrides.maxImpact ?? 0,
+    rawCollisionEvents: overrides.rawCollisionEvents ?? 0,
+    'tyre usado más frecuente': overrides['tyre usado más frecuente'] ?? 'Soft',
+    totalTime: overrides.totalTime ?? 300000,
+    raceScore: overrides.raceScore ?? 95,
+    oldSafetyRating: overrides.oldSafetyRating ?? 75,
+    newSafetyRating: overrides.newSafetyRating ?? 78,
+    safetyChangeReason: overrides.safetyChangeReason ?? 'updated'
+  };
+}
 
 function createSyntheticRace(): ParsedRace {
   return {

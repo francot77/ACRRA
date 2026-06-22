@@ -59,6 +59,7 @@ function createStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
     raceScore: overrides.raceScore ?? 95,
     oldSafetyRating: overrides.oldSafetyRating ?? 75,
     newSafetyRating: overrides.newSafetyRating ?? 78,
+    safetyChangeReason: overrides.safetyChangeReason ?? 'updated',
   };
 }
 
@@ -84,6 +85,8 @@ function createConfig(resultsDir: string, databasePath: string): AppConfig {
     watchGlob: '*RACE*.json',
     defaultSafetyRating: 75,
     safetyMemoryFactor: 0.85,
+    minActiveDriversForSafetyGain: 3,
+    allowSafetyLossBelowMinDrivers: true,
     nodeEnv: 'test'
   };
 }
@@ -177,7 +180,8 @@ test('inactive DNS drivers keep race rows but do not update historical safety', 
         totalTime: 0,
         raceScore: 0,
         oldSafetyRating: 88,
-        newSafetyRating: 88
+        newSafetyRating: 88,
+        safetyChangeReason: 'inactive'
       })
     ]
   });
@@ -203,6 +207,76 @@ test('inactive DNS drivers keep race rows but do not update historical safety', 
   assert.equal(persistedDriver.total_env_hits, 0);
   assert.equal(persistedDriver.total_cuts, 0);
   assert.equal(persistedDriver.max_impact, 20);
+  assert.equal(persistedResult.count, 0);
+});
+
+test('prior DNS rating cannot drop just for not racing', (t) => {
+  const context = createTempDb();
+  t.after(context.close);
+
+  context.database.prepare(
+    `INSERT INTO drivers (
+      guid,
+      name,
+      safety_rating,
+      races,
+      total_car_incidents,
+      total_env_hits,
+      total_cuts,
+      max_impact,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('guid-dns', 'DNS Driver', 64, 7, 6, 3, 2, 140, '2026-06-21T00:00:00.000Z');
+
+  const ratedStats = applySafetyRatings(
+    [
+      createStat({
+        guid: 'guid-dns',
+        name: 'DNS Driver',
+        completedLaps: 0,
+        hasValidResult: false,
+        active: false,
+        inactive: true,
+        finished: false,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        totalTime: 0,
+        raceScore: 0,
+        oldSafetyRating: 64,
+        newSafetyRating: 64,
+        safetyChangeReason: 'inactive'
+      })
+    ],
+    { 'guid-dns': 64 },
+    {
+      defaultSafetyRating: 75,
+      safetyMemoryFactor: 0.85,
+      minActiveDriversForSafetyGain: 3,
+      allowSafetyLossBelowMinDrivers: true
+    }
+  );
+
+  context.repositories.races.persist({
+    fileName: 'prior-dns.json',
+    filePath: '/tmp/prior-dns.json',
+    fileHash: 'hash-prior-dns',
+    processedAt: '2026-06-22T00:00:00.000Z',
+    race: createRace('prior-dns.json'),
+    stats: ratedStats
+  });
+
+  const persistedDriver = context.database.prepare('SELECT safety_rating, races FROM drivers WHERE guid = ?').get('guid-dns') as {
+    safety_rating: number;
+    races: number;
+  };
+  const persistedResult = context.database.prepare('SELECT COUNT(*) AS count FROM race_driver_results WHERE guid = ?').get('guid-dns') as {
+    count: number;
+  };
+
+  assert.equal(persistedDriver.safety_rating, 64);
+  assert.equal(persistedDriver.races, 7);
   assert.equal(persistedResult.count, 0);
 });
 
@@ -253,8 +327,12 @@ test('processor persists oldSafety, raceScore, and newSafety for existing GUID-b
   const expectedStats = applySafetyRatings(
     calculateDriverStats(race, groupedIncidents, config.defaultSafetyRating),
     { [existingGuid]: existingSafety },
-    config.defaultSafetyRating,
-    config.safetyMemoryFactor
+    {
+      defaultSafetyRating: config.defaultSafetyRating,
+      safetyMemoryFactor: config.safetyMemoryFactor,
+      minActiveDriversForSafetyGain: config.minActiveDriversForSafetyGain,
+      allowSafetyLossBelowMinDrivers: config.allowSafetyLossBelowMinDrivers
+    }
   );
   const expectedDriver = expectedStats.find((entry) => entry.guid === existingGuid);
   const persistedResult = database.prepare(

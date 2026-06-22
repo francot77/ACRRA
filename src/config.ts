@@ -10,6 +10,8 @@ const envSchema = z.object({
   WATCH_GLOB: z.string().default('*RACE*.json'),
   DEFAULT_SAFETY_RATING: z.coerce.number().min(0).max(100).default(75),
   SAFETY_MEMORY_FACTOR: z.coerce.number().min(0).max(1).default(0.85),
+  MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN: z.coerce.number().int().positive().default(3),
+  ALLOW_SAFETY_LOSS_BELOW_MIN_DRIVERS: z.enum(['true', 'false']).default('true'),
   NODE_ENV: z.string().default('production')
 });
 
@@ -23,6 +25,8 @@ export type AppConfig = {
   watchGlob: string;
   defaultSafetyRating: number;
   safetyMemoryFactor: number;
+  minActiveDriversForSafetyGain: number;
+  allowSafetyLossBelowMinDrivers: boolean;
   nodeEnv: string;
 };
 
@@ -39,6 +43,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     watchGlob: parsed.WATCH_GLOB,
     defaultSafetyRating: parsed.DEFAULT_SAFETY_RATING,
     safetyMemoryFactor: parsed.SAFETY_MEMORY_FACTOR,
+    minActiveDriversForSafetyGain: parsed.MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN,
+    allowSafetyLossBelowMinDrivers: parsed.ALLOW_SAFETY_LOSS_BELOW_MIN_DRIVERS === 'true',
     nodeEnv: parsed.NODE_ENV
   };
 }

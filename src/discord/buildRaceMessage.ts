@@ -30,6 +30,7 @@ export function buildRaceMessage(input: {
   race: ParsedRace;
   stats: DriverRaceStats[];
   groupedIncidents: GroupedIncident[];
+  minActiveDriversForSafetyGain: number;
 }): RaceMessage {
   const title = `🏁 Race Report - ${input.race.trackName}`;
   const leader = input.stats.slice().sort((left, right) => left.position - right.position)[0] ?? null;
@@ -43,13 +44,21 @@ export function buildRaceMessage(input: {
     getAwardEligibleDrivers(input.stats).filter((entry) => entry.bestLap != null),
     (left, right) => compareNumbers(left.bestLap, right.bestLap) || compareNumbers(left.position, right.position) || left.name.localeCompare(right.name)
   );
-  const safetyTable = input.stats
+  const safetyUpdated = input.stats
     .slice()
     .sort((left, right) => left.position - right.position)
+    .filter((entry) => !entry.inactive && entry.safetyChangeReason !== 'min-active-drivers')
     .map(
       (entry) =>
         `P${entry.position} ${entry.name}${formatStatusSuffix(entry)}: ${entry.oldSafetyRating.toFixed(2)} -> ${entry.newSafetyRating.toFixed(2)} ${getSafetyCategory(entry.newSafetyRating)}`
     )
+    .join('\n');
+  const safetyUnchanged = buildSafetyUnchangedText(input.stats, input.minActiveDriversForSafetyGain);
+  const dnsUnchanged = input.stats
+    .slice()
+    .sort((left, right) => left.position - right.position)
+    .filter((entry) => entry.inactive)
+    .map((entry) => `P${entry.position} ${entry.name}${formatStatusSuffix(entry)}`)
     .join('\n');
   const incidentSummary = [
     `Contactos entre autos agrupados: ${input.groupedIncidents.length}`,
@@ -79,7 +88,9 @@ export function buildRaceMessage(input: {
         inline: true
       },
       { name: 'Premios', value: awardText, inline: false },
-      { name: 'Safety actualizada', value: safetyTable, inline: false },
+      { name: 'Safety actualizada', value: safetyUpdated || 'Sin cambios', inline: false },
+      ...(safetyUnchanged ? [{ name: 'Safety sin cambios', value: safetyUnchanged, inline: false }] : []),
+      ...(dnsUnchanged ? [{ name: 'DNS / sin cambios', value: dnsUnchanged, inline: false }] : []),
       { name: 'Resumen de incidentes', value: incidentSummary, inline: false }
     ],
     footer: { text: footerText }
@@ -87,7 +98,26 @@ export function buildRaceMessage(input: {
 
   return {
     title,
-    summaryText: [title, description, '', 'Podio', podium, '', 'Premios', awardText, '', 'Safety actualizada', safetyTable, '', 'Resumen de incidentes', incidentSummary, '', footerText].join('\n'),
+    summaryText: [
+      title,
+      description,
+      '',
+      'Podio',
+      podium,
+      '',
+      'Premios',
+      awardText,
+      '',
+      'Safety actualizada',
+      safetyUpdated || 'Sin cambios',
+      ...(safetyUnchanged ? ['', 'Safety sin cambios', safetyUnchanged] : []),
+      ...(dnsUnchanged ? ['', 'DNS / sin cambios', dnsUnchanged] : []),
+      '',
+      'Resumen de incidentes',
+      incidentSummary,
+      '',
+      footerText
+    ].join('\n'),
     webhookBody: {
       content: title,
       embeds: [embed]
@@ -213,6 +243,20 @@ function formatMissileAward(incident: GroupedIncident | null, driver: DriverRace
 
 function formatAverageLap(value: number | null): string {
   return value == null ? 'Sin tiempo válido' : formatLapTime(Math.round(value));
+}
+
+function buildSafetyUnchangedText(stats: DriverRaceStats[], minActiveDriversForSafetyGain: number): string {
+  const blockedEntries = stats
+    .slice()
+    .sort((left, right) => left.position - right.position)
+    .filter((entry) => entry.safetyChangeReason === 'min-active-drivers' && !entry.inactive)
+    .map((entry) => `P${entry.position} ${entry.name}${formatStatusSuffix(entry)}`);
+
+  if (blockedEntries.length === 0) {
+    return '';
+  }
+
+  return [`mínimo ${minActiveDriversForSafetyGain} pilotos activos requerido para ganar Safety.`, ...blockedEntries].join('\n');
 }
 
 function pickOne<T>(values: T[], compare: (left: T, right: T) => number): T | null {

@@ -175,6 +175,7 @@ export interface DriverStats {
   raceScore: number;
   oldSafetyRating: number;
   newSafetyRating: number;
+  safetyChangeReason: 'updated' | 'inactive' | 'min-active-drivers';
 }
 
 export interface DriverRaceStats extends DriverStats {

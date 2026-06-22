@@ -52,7 +52,8 @@ export function calculateDriverStats(
       totalTime: driver.totalTime,
       raceScore: 0,
       oldSafetyRating: defaultSafetyRating,
-      newSafetyRating: defaultSafetyRating
+      newSafetyRating: defaultSafetyRating,
+      safetyChangeReason: inactive ? 'inactive' : 'updated'
     };
   });
 }
