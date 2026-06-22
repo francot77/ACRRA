@@ -1,0 +1,682 @@
+{
+	"TrackName": "monza",
+	"TrackConfig": "",
+	"Type": "RACE",
+	"DurationSecs": 0,
+	"RaceLaps": 3,
+	"Cars": [
+		{
+			"CarId": 0,
+			"Driver": {
+				"Name": "max vertapa",
+				"Team": "",
+				"Nation": "ITA",
+				"Guid": "76561198444029249",
+				"GuidsList": [
+					"76561198444029249"
+				]
+			},
+			"Model": "lotus_exos_125_s1",
+			"Skin": "00_racing_green",
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"CarId": 1,
+			"Driver": {
+				"Name": "Loco Mystic",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561198873024879",
+				"GuidsList": [
+					""
+				]
+			},
+			"Model": "lotus_exos_125_s1",
+			"Skin": "02_racing_23",
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"CarId": 2,
+			"Driver": {
+				"Name": "Vo so loco viteh",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561199094188385",
+				"GuidsList": [
+					""
+				]
+			},
+			"Model": "lotus_exos_125_s1",
+			"Skin": "03_racing_24",
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"CarId": 3,
+			"Driver": {
+				"Name": "Chalupa",
+				"Team": "",
+				"Nation": "ARG",
+				"Guid": "76561198965219284",
+				"GuidsList": [
+					""
+				]
+			},
+			"Model": "lotus_exos_125_s1",
+			"Skin": "04_racing_25",
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"CarId": 4,
+			"Driver": {
+				"Name": "",
+				"Team": "",
+				"Nation": "",
+				"Guid": "",
+				"GuidsList": [
+					""
+				]
+			},
+			"Model": "lotus_exos_125_s1",
+			"Skin": "05_racing_68",
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"CarId": 5,
+			"Driver": {
+				"Name": "",
+				"Team": "",
+				"Nation": "",
+				"Guid": "",
+				"GuidsList": [
+					""
+				]
+			},
+			"Model": "lotus_exos_125_s1",
+			"Skin": "06_racing_22",
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"CarId": 6,
+			"Driver": {
+				"Name": "Kanus",
+				"Team": "",
+				"Nation": "ARG",
+				"Guid": "76561198077346632",
+				"GuidsList": [
+					"76561198077346632"
+				]
+			},
+			"Model": "lotus_exos_125_s1",
+			"Skin": "07_kunos_racing",
+			"BallastKG": 0,
+			"Restrictor": 0
+		}
+	],
+	"Result": [
+		{
+			"DriverName": "Kanus",
+			"DriverGuid": "76561198077346632",
+			"CarId": 6,
+			"CarModel": "lotus_exos_125_s1",
+			"BestLap": 99669,
+			"TotalTime": 304503,
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Chalupa",
+			"DriverGuid": "76561198965219284",
+			"CarId": 3,
+			"CarModel": "lotus_exos_125_s1",
+			"BestLap": 97666,
+			"TotalTime": 309383,
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Loco Mystic",
+			"DriverGuid": "76561198873024879",
+			"CarId": 1,
+			"CarModel": "lotus_exos_125_s1",
+			"BestLap": 106678,
+			"TotalTime": 324222,
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Vo so loco viteh",
+			"DriverGuid": "76561199094188385",
+			"CarId": 2,
+			"CarModel": "lotus_exos_125_s1",
+			"BestLap": 129524,
+			"TotalTime": 309154,
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "",
+			"DriverGuid": "",
+			"CarId": 4,
+			"CarModel": "lotus_exos_125_s1",
+			"BestLap": 999999999,
+			"TotalTime": 0,
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "",
+			"DriverGuid": "",
+			"CarId": 5,
+			"CarModel": "lotus_exos_125_s1",
+			"BestLap": 999999999,
+			"TotalTime": 0,
+			"BallastKG": 0,
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "max vertapa",
+			"DriverGuid": "76561198444029249",
+			"CarId": 0,
+			"CarModel": "lotus_exos_125_s1",
+			"BestLap": 999999999,
+			"TotalTime": 0,
+			"BallastKG": 0,
+			"Restrictor": 0
+		}
+	],
+	"Laps": [
+		{
+			"DriverName": "Kanus",
+			"DriverGuid": "76561198077346632",
+			"CarId": 6,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11421764,
+			"LapTime": 102194,
+			"Sectors": [
+				37314,
+				32957,
+				31923
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Chalupa",
+			"DriverGuid": "76561198965219284",
+			"CarId": 3,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11425421,
+			"LapTime": 105869,
+			"Sectors": [
+				40214,
+				35245,
+				30410
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Loco Mystic",
+			"DriverGuid": "76561198873024879",
+			"CarId": 1,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11429345,
+			"LapTime": 109651,
+			"Sectors": [
+				39298,
+				37517,
+				32836
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Vo so loco viteh",
+			"DriverGuid": "76561199094188385",
+			"CarId": 2,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11449103,
+			"LapTime": 129524,
+			"Sectors": [
+				37918,
+				38034,
+				53572
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Kanus",
+			"DriverGuid": "76561198077346632",
+			"CarId": 6,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11521430,
+			"LapTime": 99669,
+			"Sectors": [
+				35237,
+				32886,
+				31546
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Chalupa",
+			"DriverGuid": "76561198965219284",
+			"CarId": 3,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11531281,
+			"LapTime": 105869,
+			"Sectors": [
+				41983,
+				33196,
+				30690
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Loco Mystic",
+			"DriverGuid": "76561198873024879",
+			"CarId": 1,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11537239,
+			"LapTime": 107875,
+			"Sectors": [
+				35655,
+				38132,
+				34088
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Kanus",
+			"DriverGuid": "76561198077346632",
+			"CarId": 6,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11624068,
+			"LapTime": 102631,
+			"Sectors": [
+				34200,
+				32571,
+				35860
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Vo so loco viteh",
+			"DriverGuid": "76561199094188385",
+			"CarId": 2,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11628719,
+			"LapTime": 179620,
+			"Sectors": [
+				109920,
+				37678,
+				32022
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Chalupa",
+			"DriverGuid": "76561198965219284",
+			"CarId": 3,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11628952,
+			"LapTime": 97666,
+			"Sectors": [
+				35984,
+				31636,
+				30046
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		},
+		{
+			"DriverName": "Loco Mystic",
+			"DriverGuid": "76561198873024879",
+			"CarId": 1,
+			"CarModel": "lotus_exos_125_s1",
+			"Timestamp": 11643910,
+			"LapTime": 106678,
+			"Sectors": [
+				34907,
+				37495,
+				34276
+			],
+			"Cuts": 0,
+			"BallastKG": 0,
+			"Tyre": "SS",
+			"Restrictor": 0
+		}
+	],
+	"Events": [
+		{
+			"Type": "COLLISION_WITH_CAR",
+			"CarId": 3,
+			"Driver": {
+				"Name": "Chalupa",
+				"Team": "",
+				"Nation": "ARG",
+				"Guid": "76561198965219284",
+				"GuidsList": [
+					""
+				]
+			},
+			"OtherCarId": 1,
+			"OtherDriver": {
+				"Name": "Loco Mystic",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561198873024879",
+				"GuidsList": [
+					""
+				]
+			},
+			"ImpactSpeed": 33.43824,
+			"WorldPosition": {
+				"X": -168.18362,
+				"Y": -6.8271327,
+				"Z": 92.37542
+			},
+			"RelPosition": {
+				"X": 0.910475,
+				"Y": -0.15092464,
+				"Z": 2.7361512
+			}
+		},
+		{
+			"Type": "COLLISION_WITH_CAR",
+			"CarId": 1,
+			"Driver": {
+				"Name": "Loco Mystic",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561198873024879",
+				"GuidsList": [
+					""
+				]
+			},
+			"OtherCarId": 3,
+			"OtherDriver": {
+				"Name": "Chalupa",
+				"Team": "",
+				"Nation": "ARG",
+				"Guid": "76561198965219284",
+				"GuidsList": [
+					""
+				]
+			},
+			"ImpactSpeed": 32.146133,
+			"WorldPosition": {
+				"X": -168.34694,
+				"Y": -6.596052,
+				"Z": 93.237305
+			},
+			"RelPosition": {
+				"X": -0.39450577,
+				"Y": -0.021582635,
+				"Z": -2.2188287
+			}
+		},
+		{
+			"Type": "COLLISION_WITH_CAR",
+			"CarId": 6,
+			"Driver": {
+				"Name": "Kanus",
+				"Team": "",
+				"Nation": "ARG",
+				"Guid": "76561198077346632",
+				"GuidsList": [
+					"76561198077346632"
+				]
+			},
+			"OtherCarId": 2,
+			"OtherDriver": {
+				"Name": "Vo so loco viteh",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561199094188385",
+				"GuidsList": [
+					""
+				]
+			},
+			"ImpactSpeed": 38.871647,
+			"WorldPosition": {
+				"X": -73.628365,
+				"Y": -3.0203366,
+				"Z": -539.33954
+			},
+			"RelPosition": {
+				"X": 0.93790305,
+				"Y": -0.060787585,
+				"Z": 1.7279347
+			}
+		},
+		{
+			"Type": "COLLISION_WITH_CAR",
+			"CarId": 2,
+			"Driver": {
+				"Name": "Vo so loco viteh",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561199094188385",
+				"GuidsList": [
+					""
+				]
+			},
+			"OtherCarId": 6,
+			"OtherDriver": {
+				"Name": "Kanus",
+				"Team": "",
+				"Nation": "ARG",
+				"Guid": "76561198077346632",
+				"GuidsList": [
+					"76561198077346632"
+				]
+			},
+			"ImpactSpeed": 16.476032,
+			"WorldPosition": {
+				"X": -73.83492,
+				"Y": -3.0888731,
+				"Z": -540.26965
+			},
+			"RelPosition": {
+				"X": -0.9104737,
+				"Y": -0.11049238,
+				"Z": 2.7651174
+			}
+		},
+		{
+			"Type": "COLLISION_WITH_ENV",
+			"CarId": 1,
+			"Driver": {
+				"Name": "Loco Mystic",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561198873024879",
+				"GuidsList": [
+					""
+				]
+			},
+			"OtherCarId": -1,
+			"OtherDriver": {
+				"Name": "",
+				"Team": "",
+				"Nation": "",
+				"Guid": "",
+				"GuidsList": null
+			},
+			"ImpactSpeed": 46.443523,
+			"WorldPosition": {
+				"X": 950.4512,
+				"Y": -2.8892956,
+				"Z": -908.71387
+			},
+			"RelPosition": {
+				"X": -0.9405824,
+				"Y": -0.10683946,
+				"Z": -1.6872067
+			}
+		},
+		{
+			"Type": "COLLISION_WITH_ENV",
+			"CarId": 1,
+			"Driver": {
+				"Name": "Loco Mystic",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561198873024879",
+				"GuidsList": [
+					""
+				]
+			},
+			"OtherCarId": -1,
+			"OtherDriver": {
+				"Name": "",
+				"Team": "",
+				"Nation": "",
+				"Guid": "",
+				"GuidsList": null
+			},
+			"ImpactSpeed": 52.04672,
+			"WorldPosition": {
+				"X": 751.4219,
+				"Y": -2.1153831,
+				"Z": -795.6341
+			},
+			"RelPosition": {
+				"X": -0.9348004,
+				"Y": 0.3083515,
+				"Z": -1.6872672
+			}
+		},
+		{
+			"Type": "COLLISION_WITH_CAR",
+			"CarId": 2,
+			"Driver": {
+				"Name": "Vo so loco viteh",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561199094188385",
+				"GuidsList": [
+					""
+				]
+			},
+			"OtherCarId": 6,
+			"OtherDriver": {
+				"Name": "Kanus",
+				"Team": "",
+				"Nation": "ARG",
+				"Guid": "76561198077346632",
+				"GuidsList": [
+					"76561198077346632"
+				]
+			},
+			"ImpactSpeed": 297.76004,
+			"WorldPosition": {
+				"X": -173.00598,
+				"Y": -6.7380037,
+				"Z": 117.65888
+			},
+			"RelPosition": {
+				"X": 0.14304955,
+				"Y": 0.0471993,
+				"Z": 2.6770291
+			}
+		},
+		{
+			"Type": "COLLISION_WITH_ENV",
+			"CarId": 2,
+			"Driver": {
+				"Name": "Vo so loco viteh",
+				"Team": "",
+				"Nation": "PLA",
+				"Guid": "76561199094188385",
+				"GuidsList": [
+					""
+				]
+			},
+			"OtherCarId": -1,
+			"OtherDriver": {
+				"Name": "",
+				"Team": "",
+				"Nation": "",
+				"Guid": "",
+				"GuidsList": null
+			},
+			"ImpactSpeed": 25.423674,
+			"WorldPosition": {
+				"X": -171.93195,
+				"Y": -6.3704576,
+				"Z": -9.554407
+			},
+			"RelPosition": {
+				"X": -0.9104795,
+				"Y": -0.20838755,
+				"Z": 2.7824457
+			}
+		},
+		{
+			"Type": "COLLISION_WITH_ENV",
+			"CarId": 3,
+			"Driver": {
+				"Name": "Chalupa",
+				"Team": "",
+				"Nation": "ARG",
+				"Guid": "76561198965219284",
+				"GuidsList": [
+					""
+				]
+			},
+			"OtherCarId": -1,
+			"OtherDriver": {
+				"Name": "",
+				"Team": "",
+				"Nation": "",
+				"Guid": "",
+				"GuidsList": null
+			},
+			"ImpactSpeed": 23.11564,
+			"WorldPosition": {
+				"X": -143.0034,
+				"Y": -5.8590956,
+				"Z": -101.2138
+			},
+			"RelPosition": {
+				"X": -0.91047984,
+				"Y": -0.20838736,
+				"Z": 2.7824538
+			}
+		}
+	]
+}

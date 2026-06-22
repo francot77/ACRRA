@@ -1,0 +1,69 @@
+schema: spec-driven
+
+context: |
+  Project: MotassettoRR
+  Current state: bootstrap repository with Assetto Corsa result samples only
+  Domain: race result monitoring and processing from JSON session exports
+  Detected stack: no application runtime or source code configured yet
+  Architecture: not established yet
+  Testing: no test runner or quality tool configured yet
+  Planned MVP context: ac-race-monitor in Node.js/TypeScript with Docker, SQLite, chokidar, dotenv, Discord webhook
+  Data examples: samples/results/*.json with QUALIFY and RACE payloads
+
+strict_tdd: false
+
+testing:
+  detected: 2026-06-22
+  strict_tdd_reason: no test runner detected in repository
+  runner:
+    available: false
+    framework: ""
+    command: ""
+  layers:
+    unit:
+      available: false
+      tool: ""
+    integration:
+      available: false
+      tool: ""
+    e2e:
+      available: false
+      tool: ""
+  coverage:
+    available: false
+    command: ""
+  quality:
+    linter:
+      available: false
+      command: ""
+    typecheck:
+      available: false
+      command: ""
+    formatter:
+      available: false
+      command: ""
+
+rules:
+  proposal:
+    - Keep proposals aligned to the current empty-repo baseline and sample JSON inputs.
+    - State assumptions explicitly when introducing the first application structure.
+  specs:
+    - Use Given/When/Then for scenarios.
+    - Use RFC 2119 keywords (MUST, SHOULD, MAY).
+  design:
+    - Explain new runtime boundaries because no architecture exists yet.
+    - Record storage, file-watch, and webhook tradeoffs explicitly.
+  tasks:
+    - Keep tasks completable in one session.
+    - Flag delivery slices that may exceed the 400-line review budget.
+  apply:
+    - Follow existing patterns once established; until then, prefer minimal structure.
+    - Chained PR strategy is ask-always when work exceeds review budget.
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas.

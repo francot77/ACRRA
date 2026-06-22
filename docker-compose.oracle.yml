@@ -1,0 +1,20 @@
+services:
+  ac-race-monitor:
+    build:
+      context: .
+    image: motassettorr:oracle
+    restart: unless-stopped
+    environment:
+      RESULTS_DIR: /app/results
+      DATABASE_PATH: /app/data/ac-race-monitor.sqlite
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      PROCESSED_FILE_STRATEGY: sqlite
+      SCAN_ON_START: ${SCAN_ON_START:-true}
+      MIN_FILE_AGE_MS: ${MIN_FILE_AGE_MS:-3000}
+      WATCH_GLOB: ${WATCH_GLOB:-*RACE*.json}
+      DEFAULT_SAFETY_RATING: ${DEFAULT_SAFETY_RATING:-75}
+      SAFETY_MEMORY_FACTOR: ${SAFETY_MEMORY_FACTOR:-0.85}
+      NODE_ENV: production
+    volumes:
+      - ${HOST_ASSETTO_RESULTS_DIR:-/opt/assetto/server/results}:/app/results:ro
+      - ${HOST_MONITOR_DATA_DIR:-/opt/ac-race-monitor/data}:/app/data
