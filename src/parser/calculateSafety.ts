@@ -23,8 +23,7 @@ export function updateSafetyRating(oldSafety: number, raceScore: number, safetyM
 type ApplySafetyRatingsOptions = {
   defaultSafetyRating?: number;
   safetyMemoryFactor?: number;
-  minActiveDriversForSafetyGain?: number;
-  allowSafetyLossBelowMinDrivers?: boolean;
+  minActiveDriversForSafety?: number;
 };
 
 export function getSafetyCategory(score: number): SafetyCategory {
@@ -44,11 +43,10 @@ export function applySafetyRatings(
   const {
     defaultSafetyRating = 75,
     safetyMemoryFactor = 0.85,
-    minActiveDriversForSafetyGain = 1,
-    allowSafetyLossBelowMinDrivers = true
+    minActiveDriversForSafety = 1
   } = options;
   const activeDrivers = stats.filter((entry) => entry.active).length;
-  const canGainSafety = activeDrivers >= minActiveDriversForSafetyGain;
+  const safetyEligible = activeDrivers >= minActiveDriversForSafety;
 
   return stats.map((entry) => {
     const oldSafetyRating = entry.guid ? historicalRatings[entry.guid] ?? defaultSafetyRating : defaultSafetyRating;
@@ -63,17 +61,25 @@ export function applySafetyRatings(
     }
 
     const raceScore = calculateRaceSafety(entry);
-    const candidateSafetyRating = updateSafetyRating(oldSafetyRating, raceScore, safetyMemoryFactor);
-    const isSafetyLoss = candidateSafetyRating < oldSafetyRating;
-    const shouldBlockChange = !canGainSafety && (!isSafetyLoss || !allowSafetyLossBelowMinDrivers);
-    const newSafetyRating = shouldBlockChange ? oldSafetyRating : candidateSafetyRating;
+
+    if (!safetyEligible) {
+      return {
+        ...entry,
+        raceScore,
+        oldSafetyRating,
+        newSafetyRating: oldSafetyRating,
+        safetyChangeReason: 'not-eligible'
+      };
+    }
+
+    const newSafetyRating = updateSafetyRating(oldSafetyRating, raceScore, safetyMemoryFactor);
 
     return {
       ...entry,
       raceScore,
       oldSafetyRating,
       newSafetyRating,
-      safetyChangeReason: shouldBlockChange ? 'min-active-drivers' : 'updated'
+      safetyChangeReason: 'updated'
     };
   });
 }

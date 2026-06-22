@@ -58,6 +58,8 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 | `WATCH_GLOB` | `*RACE*.json` | Filtro de archivos observados. |
 | `DEFAULT_SAFETY_RATING` | `75` | Safety inicial para GUIDs nuevos. |
 | `SAFETY_MEMORY_FACTOR` | `0.85` | Memoria histórica de safety. |
+| `MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN` | `3` | Mínimo de pilotos activos para que la carrera puntúe safety. |
+| `NUCLEAR_MISSILE_MIN_CAR_IMPACT_KMH` | `100` | Umbral mínimo de impacto auto vs auto para `💥 Misil nuclear`. |
 | `NODE_ENV` | `production` | Modo runtime. |
 | `HOST_ASSETTO_RESULTS_DIR` | `/opt/assetto/server/results` | Host path para Compose. |
 | `HOST_MONITOR_DATA_DIR` | `/opt/ac-race-monitor/data` | Host path para SQLite persistente. |

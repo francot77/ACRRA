@@ -145,10 +145,12 @@ export function createRepositories(database: AppDatabase) {
               continue;
             }
 
+            const shouldPersistSafetyChange = stat.safetyChangeReason === 'updated';
+
             upsertDriverStatement.run({
               guid: stat.guid,
               name: stat.name,
-              safetyRating: stat.newSafetyRating,
+              safetyRating: shouldPersistSafetyChange ? stat.newSafetyRating : stat.oldSafetyRating,
               totalCarIncidents: stat.carIncidentsGrouped,
               totalEnvHits: stat.envHits,
               totalCuts: stat.totalCuts,
@@ -173,7 +175,7 @@ export function createRepositories(database: AppDatabase) {
               maxImpact: stat.maxImpact,
               raceScore: stat.raceScore,
               oldSafety: stat.oldSafetyRating,
-              newSafety: stat.newSafetyRating
+              newSafety: shouldPersistSafetyChange ? stat.newSafetyRating : stat.oldSafetyRating
             });
 
             persistedDrivers += 1;

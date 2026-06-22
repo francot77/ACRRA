@@ -50,8 +50,7 @@ export function createRaceProcessor(config: AppConfig, repositories: Repositorie
       {
         defaultSafetyRating: config.defaultSafetyRating,
         safetyMemoryFactor: config.safetyMemoryFactor,
-        minActiveDriversForSafetyGain: config.minActiveDriversForSafetyGain,
-        allowSafetyLossBelowMinDrivers: config.allowSafetyLossBelowMinDrivers
+        minActiveDriversForSafety: config.minActiveDriversForSafetyGain
       }
     );
     const persistence = repositories.races.persist({
@@ -80,7 +79,8 @@ export function createRaceProcessor(config: AppConfig, repositories: Repositorie
       race,
       stats: ratedDriverStats,
       groupedIncidents,
-      minActiveDriversForSafetyGain: config.minActiveDriversForSafetyGain
+      minActiveDriversForSafetyGain: config.minActiveDriversForSafetyGain,
+      nuclearMissileMinCarImpactKmh: config.nuclearMissileMinCarImpactKmh
     });
     await sendWebhook(config.discordWebhookUrl, raceMessage);
 

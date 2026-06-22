@@ -11,7 +11,7 @@ const envSchema = z.object({
   DEFAULT_SAFETY_RATING: z.coerce.number().min(0).max(100).default(75),
   SAFETY_MEMORY_FACTOR: z.coerce.number().min(0).max(1).default(0.85),
   MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN: z.coerce.number().int().positive().default(3),
-  ALLOW_SAFETY_LOSS_BELOW_MIN_DRIVERS: z.enum(['true', 'false']).default('true'),
+  NUCLEAR_MISSILE_MIN_CAR_IMPACT_KMH: z.coerce.number().nonnegative().default(100),
   NODE_ENV: z.string().default('production')
 });
 
@@ -26,7 +26,7 @@ export type AppConfig = {
   defaultSafetyRating: number;
   safetyMemoryFactor: number;
   minActiveDriversForSafetyGain: number;
-  allowSafetyLossBelowMinDrivers: boolean;
+  nuclearMissileMinCarImpactKmh: number;
   nodeEnv: string;
 };
 
@@ -44,7 +44,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     defaultSafetyRating: parsed.DEFAULT_SAFETY_RATING,
     safetyMemoryFactor: parsed.SAFETY_MEMORY_FACTOR,
     minActiveDriversForSafetyGain: parsed.MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN,
-    allowSafetyLossBelowMinDrivers: parsed.ALLOW_SAFETY_LOSS_BELOW_MIN_DRIVERS === 'true',
+    nuclearMissileMinCarImpactKmh: parsed.NUCLEAR_MISSILE_MIN_CAR_IMPACT_KMH,
     nodeEnv: parsed.NODE_ENV
   };
 }

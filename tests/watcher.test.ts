@@ -20,7 +20,7 @@ function createConfig(resultsDir: string): AppConfig {
     defaultSafetyRating: 75,
     safetyMemoryFactor: 0.85,
     minActiveDriversForSafetyGain: 3,
-    allowSafetyLossBelowMinDrivers: true,
+    nuclearMissileMinCarImpactKmh: 100,
     nodeEnv: 'test'
   };
 }

@@ -70,6 +70,19 @@ function getAwardsValue(message: ReturnType<typeof buildRaceMessage>): string {
   return message.webhookBody.embeds[0]?.fields.find((field) => field.name === 'Premios')?.value ?? '';
 }
 
+const DEFAULT_NUCLEAR_MISSILE_MIN_CAR_IMPACT_KMH = 100;
+
+type BuildMessageInput = Omit<Parameters<typeof buildRaceMessage>[0], 'nuclearMissileMinCarImpactKmh'> & {
+  nuclearMissileMinCarImpactKmh?: number;
+};
+
+function buildMessage(input: BuildMessageInput): ReturnType<typeof buildRaceMessage> {
+  return buildRaceMessage({
+    ...input,
+    nuclearMissileMinCarImpactKmh: input.nuclearMissileMinCarImpactKmh ?? DEFAULT_NUCLEAR_MISSILE_MIN_CAR_IMPACT_KMH
+  });
+}
+
 test('empty webhook falls back to console logging without crashing', async (t) => {
   const infoLogs: string[] = [];
   const originalInfo = console.info;
@@ -80,7 +93,7 @@ test('empty webhook falls back to console logging without crashing', async (t) =
     console.info = originalInfo;
   });
 
-  const message = buildRaceMessage({
+  const message = buildMessage({
     fileName: 'sample-race.json',
     race: createRace(),
     stats: [createStat()],
@@ -118,7 +131,7 @@ test('configured webhook sends exactly one request with the required race report
     console.info = originalInfo;
   });
 
-  const message = buildRaceMessage({
+  const message = buildMessage({
     fileName: 'sample-race.json',
     race: createRace(),
     stats: [
@@ -173,7 +186,7 @@ test('configured webhook sends exactly one request with the required race report
   assert.match(embed?.description ?? '', /Auto principal: lotus_exos_125_s1/);
   assert.match(embed?.description ?? '', /Vueltas pactadas: 3/);
   assert.equal(embed?.footer?.text, 'Archivo procesado: sample-race.json');
-  assert.deepEqual(fieldNames, ['Podio', '⚡ Vuelta rápida', 'Premios', 'Safety actualizada', 'Resumen de incidentes']);
+  assert.deepEqual(fieldNames, ['Podio', '⚡ Vuelta rápida', 'Premios', 'Safety', 'Resumen de incidentes']);
   assert.match(awardsField?.value ?? '', /⚡ Vuelta rápida/);
   assert.match(awardsField?.value ?? '', /🧼 Más limpio/);
   assert.match(awardsField?.value ?? '', /🧱 Albañil del día/);
@@ -185,7 +198,7 @@ test('configured webhook sends exactly one request with the required race report
 });
 
 test('report excludes DNS from awards, marks DNF and DNS, and formats impacts without raw milliseconds', () => {
-  const message = buildRaceMessage({
+  const message = buildMessage({
     fileName: 'sample-race.json',
     race: createRace(),
     stats: [
@@ -237,6 +250,24 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
         oldSafetyRating: 80,
         newSafetyRating: 76.85,
         safetyChangeReason: 'updated'
+      }),
+      createStat({
+        carId: 4,
+        name: 'Active Three',
+        guid: 'guid-4',
+        identity: { kind: 'guid', value: 'guid-4' },
+        position: 4,
+        finished: false,
+        completedLaps: 1,
+        hasValidResult: false,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        totalTime: 0,
+        oldSafetyRating: 77,
+        newSafetyRating: 79,
+        safetyChangeReason: 'updated'
       })
     ],
     groupedIncidents: [createGroupedIncident()],
@@ -248,11 +279,10 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
   const podiumField = embed.fields.find((field) => field.name === 'Podio');
   const incidentsField = embed.fields.find((field) => field.name === 'Resumen de incidentes');
 
-  const safetyField = embed.fields.find((field) => field.name === 'Safety actualizada');
-  const dnsField = embed.fields.find((field) => field.name === 'DNS / sin cambios');
+  const safetyField = embed.fields.find((field) => field.name === 'Safety');
 
-  assert.match(podiumField?.value ?? '', /DNS Driver \(DNS \/ sin actividad\)/);
   assert.match(podiumField?.value ?? '', /Crash Driver \(DNF 0\/3 vueltas\)/);
+  assert.doesNotMatch(podiumField?.value ?? '', /DNS Driver/);
   assert.doesNotMatch(awardsField?.value ?? '', /DNS Driver/);
   assert.match(awardsField?.value ?? '', /Crash Driver \(3 impactos antes de empezar\)/);
   assert.doesNotMatch(awardsField?.value ?? '', /🧼 Más limpio/);
@@ -262,14 +292,13 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
   assert.doesNotMatch(awardsField?.value ?? '', /\b\d+(?:\.\d+)? ms\b/);
   assert.doesNotMatch(safetyField?.value ?? '', /DNS Driver/);
   assert.match(safetyField?.value ?? '', /P3 Crash Driver \(DNF 0\/3 vueltas\): 80\.00 -> 76\.85/);
-  assert.match(dnsField?.value ?? '', /P2 DNS Driver \(DNS \/ sin actividad\)/);
   assert.match(incidentsField?.value ?? '', /Impacto máximo entre autos: 140\.00/);
   assert.match(incidentsField?.value ?? '', /Impacto máximo con entorno: 70\.00/);
   assert.match(incidentsField?.value ?? '', /Impacto máximo total: 140\.00/);
 });
 
 test('report explains unchanged safety below the active-driver minimum without placeholder awards', () => {
-  const message = buildRaceMessage({
+  const message = buildMessage({
     fileName: 'sample-race.json',
     race: createRace(),
     stats: [
@@ -279,7 +308,7 @@ test('report explains unchanged safety below the active-driver minimum without p
         avgLap: 91513,
         oldSafetyRating: 75,
         newSafetyRating: 75,
-        safetyChangeReason: 'min-active-drivers'
+        safetyChangeReason: 'not-eligible'
       }),
       createStat({
         carId: 2,
@@ -309,19 +338,16 @@ test('report explains unchanged safety below the active-driver minimum without p
 
   const embed = message.webhookBody.embeds[0];
   const awardsField = embed.fields.find((field) => field.name === 'Premios');
-  const safetyField = embed.fields.find((field) => field.name === 'Safety actualizada');
-  const unchangedField = embed.fields.find((field) => field.name === 'Safety sin cambios');
+  const safetyField = embed.fields.find((field) => field.name === 'Safety');
 
   assert.equal(awardsField?.value, '⚡ Vuelta rápida: Solo Driver (1:31.513)');
   assert.doesNotMatch(awardsField?.value ?? '', /No aplica|Sin datos|Más limpio|Más consistente|Tortuga digna/);
-  assert.equal(safetyField?.value, 'Sin cambios');
-  assert.match(unchangedField?.value ?? '', /mínimo 3 pilotos activos requerido para ganar Safety\./);
-  assert.match(unchangedField?.value ?? '', /P1 Solo Driver/);
+  assert.equal(safetyField?.value, 'No puntuable: 1 pilotos activos. Mínimo requerido: 3.');
 });
 
 test('report hides tortuga digna when a single finisher has no real competition', () => {
   const awards = getAwardsValue(
-    buildRaceMessage({
+    buildMessage({
       fileName: 'sample-race.json',
       race: createRace(),
       stats: [
@@ -394,14 +420,14 @@ test('report hides tortuga digna when a single finisher has no real competition'
   assert.doesNotMatch(awards, /🐢 Tortuga digna|🧼 Más limpio|📈 Más consistente|No aplica/);
   assert.match(awards, /⚡ Vuelta rápida: Kanus \(1:31\.513\)/);
   assert.match(awards, /🧱 Albañil del día: ramen \(2 golpes al entorno\)/);
-  assert.match(awards, /💥 Misil nuclear: ramen \(55\.00 km\/h de impacto\)/);
+  assert.doesNotMatch(awards, /💥 Misil nuclear/);
   assert.match(awards, /🚜 Cono del día: ramen \(59\.00 puntos\)/);
   assert.match(awards, /🪦 DNF destructivo: ramen \(3 impactos antes de empezar\)/);
 });
 
 test('report hides clean and consistent awards without enough finished candidates', () => {
   const awards = getAwardsValue(
-    buildRaceMessage({
+    buildMessage({
       fileName: 'sample-race.json',
       race: createRace(),
       stats: [
@@ -431,7 +457,7 @@ test('report hides clean and consistent awards without enough finished candidate
 
 test('report hides tortuga digna when fastest-lap winner is also tortoise and there is no real competition', () => {
   const awards = getAwardsValue(
-    buildRaceMessage({
+    buildMessage({
       fileName: 'sample-race.json',
       race: createRace(),
       stats: [
@@ -457,4 +483,100 @@ test('report hides tortuga digna when fastest-lap winner is also tortoise and th
   );
 
   assert.doesNotMatch(awards, /🐢 Tortuga digna|No aplica|Sin datos/);
+});
+
+test('report marks two-active-driver race as no puntuable and omits dns plus old safety sections', () => {
+  const message = buildMessage({
+    fileName: 'sample-race.json',
+    race: createRace(),
+    stats: [
+      createStat({ name: 'Active One', oldSafetyRating: 75, newSafetyRating: 75, safetyChangeReason: 'not-eligible' }),
+      createStat({
+        carId: 2,
+        name: 'Active Two',
+        guid: 'guid-2',
+        identity: { kind: 'guid', value: 'guid-2' },
+        position: 2,
+        finished: false,
+        completedLaps: 1,
+        oldSafetyRating: 84,
+        newSafetyRating: 84,
+        safetyChangeReason: 'not-eligible'
+      }),
+      createStat({
+        carId: 3,
+        name: 'DNS Driver',
+        guid: 'guid-3',
+        identity: { kind: 'guid', value: 'guid-3' },
+        position: 3,
+        active: false,
+        inactive: true,
+        finished: false,
+        completedLaps: 0,
+        hasValidResult: false,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        totalTime: 0,
+        raceScore: 0,
+        oldSafetyRating: 91,
+        newSafetyRating: 91,
+        safetyChangeReason: 'inactive'
+      })
+    ],
+    groupedIncidents: [],
+    minActiveDriversForSafetyGain: 3
+  });
+
+  const embed = message.webhookBody.embeds[0];
+  const podium = embed.fields.find((field) => field.name === 'Podio')?.value ?? '';
+  const safety = embed.fields.find((field) => field.name === 'Safety')?.value ?? '';
+
+  assert.match(safety, /No puntuable: 2 pilotos activos\. Mínimo requerido: 3\./);
+  assert.doesNotMatch(message.summaryText, /DNS/);
+  assert.doesNotMatch(message.summaryText, /Safety actualizada|Safety sin cambios/);
+  assert.doesNotMatch(podium, /DNS Driver/);
+});
+
+test('env-only impact never renders misil nuclear', () => {
+  const awards = getAwardsValue(
+    buildMessage({
+      fileName: 'sample-race.json',
+      race: createRace(),
+      stats: [createStat({ name: 'Builder', envHits: 2, maxEnvImpact: 150, maxImpact: 150 })],
+      groupedIncidents: [],
+      minActiveDriversForSafetyGain: 3
+    })
+  );
+
+  assert.doesNotMatch(awards, /💥 Misil nuclear/);
+});
+
+test('car-to-car impact under threshold does not render misil nuclear', () => {
+  const awards = getAwardsValue(
+    buildMessage({
+      fileName: 'sample-race.json',
+      race: createRace(),
+      stats: [createStat(), createStat({ carId: 2, name: 'Rival', guid: 'guid-2', identity: { kind: 'guid', value: 'guid-2' }, position: 2 })],
+      groupedIncidents: [{ ...createGroupedIncident(), maxImpact: 80, avgImpact: 80 }],
+      minActiveDriversForSafetyGain: 3
+    })
+  );
+
+  assert.doesNotMatch(awards, /💥 Misil nuclear/);
+});
+
+test('car-to-car impact over threshold renders misil nuclear', () => {
+  const awards = getAwardsValue(
+    buildMessage({
+      fileName: 'sample-race.json',
+      race: createRace(),
+      stats: [createStat(), createStat({ carId: 2, name: 'Rival Driver', guid: 'guid-2', identity: { kind: 'guid', value: 'guid-2' }, position: 2 })],
+      groupedIncidents: [{ ...createGroupedIncident(), maxImpact: 130, avgImpact: 120 }],
+      minActiveDriversForSafetyGain: 3
+    })
+  );
+
+  assert.match(awards, /💥 Misil nuclear: Guid Driver y Rival Driver \(130\.00 km\/h de impacto\)/);
 });

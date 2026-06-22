@@ -130,11 +130,26 @@ test('inactive drivers do not receive awards or safety updates, while destructiv
   assert.equal(destructiveDnf.safetyChangeReason, 'updated');
 });
 
-test('clean single-active-driver race does not gain safety when the minimum active driver count is 3', () => {
+test('two active drivers below the minimum do not change safety for anyone', () => {
   const ratedStats = applySafetyRatings(
     [
-      createBaseStat({ guid: 'solo-guid', name: 'Solo Driver', oldSafetyRating: 75, newSafetyRating: 75 }),
+      createBaseStat({ guid: 'driver-1', name: 'Driver 1', oldSafetyRating: 75, newSafetyRating: 75 }),
       createBaseStat({
+        carId: 2,
+        guid: 'driver-2',
+        name: 'Driver 2',
+        position: 2,
+        oldSafetyRating: 82,
+        newSafetyRating: 82,
+        carIncidentsGrouped: 1,
+        envHits: 1,
+        totalCuts: 2,
+        maxImpact: 80,
+        raceScore: 0
+      }),
+      createBaseStat({
+        carId: 3,
+        position: 3,
         guid: 'dns-guid',
         name: 'DNS Driver',
         active: false,
@@ -153,27 +168,78 @@ test('clean single-active-driver race does not gain safety when the minimum acti
         safetyChangeReason: 'inactive'
       })
     ],
-    { 'solo-guid': 75, 'dns-guid': 88 },
+    { 'driver-1': 75, 'driver-2': 82, 'dns-guid': 88 },
     {
       defaultSafetyRating: 75,
       safetyMemoryFactor: 0.85,
-      minActiveDriversForSafetyGain: 3,
-      allowSafetyLossBelowMinDrivers: true
+      minActiveDriversForSafety: 3
     }
   );
 
-  const solo = ratedStats.find((entry) => entry.guid === 'solo-guid');
+  const driver1 = ratedStats.find((entry) => entry.guid === 'driver-1');
+  const driver2 = ratedStats.find((entry) => entry.guid === 'driver-2');
   const dns = ratedStats.find((entry) => entry.guid === 'dns-guid');
 
-  assert.ok(solo);
-  assert.equal(solo.raceScore, 100);
-  assert.equal(solo.oldSafetyRating, 75);
-  assert.equal(solo.newSafetyRating, 75);
-  assert.equal(solo.safetyChangeReason, 'min-active-drivers');
+  assert.ok(driver1);
+  assert.equal(driver1.raceScore, 100);
+  assert.equal(driver1.oldSafetyRating, 75);
+  assert.equal(driver1.newSafetyRating, 75);
+  assert.equal(driver1.safetyChangeReason, 'not-eligible');
+
+  assert.ok(driver2);
+  assert.equal(driver2.oldSafetyRating, 82);
+  assert.equal(driver2.newSafetyRating, 82);
+  assert.equal(driver2.safetyChangeReason, 'not-eligible');
 
   assert.ok(dns);
   assert.equal(dns.newSafetyRating, 88);
   assert.equal(dns.safetyChangeReason, 'inactive');
+});
+
+test('dnf with hits does not lose safety when the race is not safety-eligible', () => {
+  const ratedStats = applySafetyRatings(
+    [
+      createBaseStat({ guid: 'clean-guid', name: 'Clean Driver', oldSafetyRating: 80, newSafetyRating: 80 }),
+      createBaseStat({
+        carId: 2,
+        guid: 'dnf-guid',
+        name: 'Crash Driver',
+        position: 2,
+        finished: false,
+        destructiveDnf: true,
+        completedLaps: 0,
+        hasValidResult: false,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        carIncidentsGrouped: 2,
+        envHits: 1,
+        totalCuts: 1,
+        maxCarImpact: 130,
+        maxEnvImpact: 30,
+        maxImpact: 130,
+        rawCollisionEvents: 3,
+        totalTime: 0,
+        oldSafetyRating: 84,
+        newSafetyRating: 84,
+        raceScore: 0
+      })
+    ],
+    { 'clean-guid': 80, 'dnf-guid': 84 },
+    {
+      defaultSafetyRating: 75,
+      safetyMemoryFactor: 0.85,
+      minActiveDriversForSafety: 3
+    }
+  );
+
+  const dnf = ratedStats.find((entry) => entry.guid === 'dnf-guid');
+
+  assert.ok(dnf);
+  assert.equal(dnf.raceScore, 27);
+  assert.equal(dnf.newSafetyRating, 84);
+  assert.equal(dnf.safetyChangeReason, 'not-eligible');
 });
 
 test('formatConsistency follows compact report presentation rules', () => {

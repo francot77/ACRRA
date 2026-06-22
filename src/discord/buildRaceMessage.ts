@@ -31,12 +31,18 @@ export function buildRaceMessage(input: {
   stats: DriverRaceStats[];
   groupedIncidents: GroupedIncident[];
   minActiveDriversForSafetyGain: number;
+  nuclearMissileMinCarImpactKmh: number;
 }): RaceMessage {
   const title = `🏁 Race Report - ${input.race.trackName}`;
-  const leader = input.stats.slice().sort((left, right) => left.position - right.position)[0] ?? null;
-  const podium = input.stats
+  const activeDrivers = input.stats.filter((entry) => entry.active).length;
+  const safetyEligible = activeDrivers >= input.minActiveDriversForSafetyGain;
+  const officialActiveResults = input.stats
     .slice()
     .sort((left, right) => left.position - right.position)
+    .filter((entry) => entry.active);
+  const leader = officialActiveResults[0] ?? null;
+  const podium = officialActiveResults
+    .slice()
     .slice(0, 3)
     .map((entry) => formatPodiumEntry(entry, leader))
     .join('\n') || 'Sin clasificados';
@@ -47,19 +53,15 @@ export function buildRaceMessage(input: {
   const safetyUpdated = input.stats
     .slice()
     .sort((left, right) => left.position - right.position)
-    .filter((entry) => !entry.inactive && entry.safetyChangeReason !== 'min-active-drivers')
+    .filter((entry) => entry.active && entry.safetyChangeReason === 'updated')
     .map(
       (entry) =>
         `P${entry.position} ${entry.name}${formatStatusSuffix(entry)}: ${entry.oldSafetyRating.toFixed(2)} -> ${entry.newSafetyRating.toFixed(2)} ${getSafetyCategory(entry.newSafetyRating)}`
     )
     .join('\n');
-  const safetyUnchanged = buildSafetyUnchangedText(input.stats, input.minActiveDriversForSafetyGain);
-  const dnsUnchanged = input.stats
-    .slice()
-    .sort((left, right) => left.position - right.position)
-    .filter((entry) => entry.inactive)
-    .map((entry) => `P${entry.position} ${entry.name}${formatStatusSuffix(entry)}`)
-    .join('\n');
+  const safetySummary = safetyEligible
+    ? safetyUpdated || 'Sin cambios'
+    : `No puntuable: ${activeDrivers} pilotos activos. Mínimo requerido: ${input.minActiveDriversForSafetyGain}.`;
   const incidentSummary = [
     `Contactos entre autos agrupados: ${input.groupedIncidents.length}`,
     `Eventos crudos entre autos: ${sum(input.groupedIncidents.map((entry) => entry.rawEventCount))}`,
@@ -68,7 +70,7 @@ export function buildRaceMessage(input: {
     `Impacto máximo con entorno: ${Math.max(0, ...input.stats.map((entry) => entry.maxEnvImpact)).toFixed(2)}`,
     `Impacto máximo total: ${Math.max(0, ...input.stats.map((entry) => entry.maxImpact)).toFixed(2)}`
   ].join('\n');
-  const awards = buildAwards(input.stats, input.groupedIncidents);
+  const awards = buildAwards(input.stats, input.groupedIncidents, input.nuclearMissileMinCarImpactKmh);
   const awardText = awards.map((award) => `${award.label}: ${award.value}`).join('\n');
   const description = [
     `Auto principal: ${input.race.carModel ?? 'unknown'}`,
@@ -88,9 +90,7 @@ export function buildRaceMessage(input: {
         inline: true
       },
       { name: 'Premios', value: awardText, inline: false },
-      { name: 'Safety actualizada', value: safetyUpdated || 'Sin cambios', inline: false },
-      ...(safetyUnchanged ? [{ name: 'Safety sin cambios', value: safetyUnchanged, inline: false }] : []),
-      ...(dnsUnchanged ? [{ name: 'DNS / sin cambios', value: dnsUnchanged, inline: false }] : []),
+      { name: 'Safety', value: safetySummary, inline: false },
       { name: 'Resumen de incidentes', value: incidentSummary, inline: false }
     ],
     footer: { text: footerText }
@@ -108,10 +108,8 @@ export function buildRaceMessage(input: {
       'Premios',
       awardText,
       '',
-      'Safety actualizada',
-      safetyUpdated || 'Sin cambios',
-      ...(safetyUnchanged ? ['', 'Safety sin cambios', safetyUnchanged] : []),
-      ...(dnsUnchanged ? ['', 'DNS / sin cambios', dnsUnchanged] : []),
+      'Safety',
+      safetySummary,
       '',
       'Resumen de incidentes',
       incidentSummary,
@@ -125,7 +123,11 @@ export function buildRaceMessage(input: {
   };
 }
 
-function buildAwards(stats: DriverRaceStats[], groupedIncidents: GroupedIncident[]): Array<{ label: string; value: string }> {
+function buildAwards(
+  stats: DriverRaceStats[],
+  groupedIncidents: GroupedIncident[],
+  nuclearMissileMinCarImpactKmh: number
+): Array<{ label: string; value: string }> {
   const awards: Array<{ label: string; value: string }> = [];
   const eligibleDrivers = getAwardEligibleDrivers(stats);
   const finishedDrivers = eligibleDrivers.filter((entry) => entry.finished);
@@ -157,12 +159,8 @@ function buildAwards(stats: DriverRaceStats[], groupedIncidents: GroupedIncident
       left.name.localeCompare(right.name)
   );
   const missileIncident = pickOne(
-    groupedIncidents.filter((entry) => entry.maxImpact > 0),
+    groupedIncidents.filter((entry) => entry.maxImpact >= nuclearMissileMinCarImpactKmh),
     (left, right) => compareNumbers(right.maxImpact, left.maxImpact) || compareNumbers(right.rawEventCount, left.rawEventCount) || left.pairKey.localeCompare(right.pairKey)
-  );
-  const missileDriver = pickOne(
-    eligibleDrivers.filter((entry) => entry.maxImpact > 0),
-    (left, right) => compareNumbers(right.maxImpact, left.maxImpact) || compareNumbers(right.rawCollisionEvents, left.rawCollisionEvents) || left.name.localeCompare(right.name)
   );
   const cone = pickOne(
     eligibleDrivers,
@@ -206,7 +204,7 @@ function buildAwards(stats: DriverRaceStats[], groupedIncidents: GroupedIncident
   if (albaNil) {
     awards.push({ label: '🧱 Albañil del día', value: `${albaNil.name} (${albaNil.envHits} golpes al entorno)` });
   }
-  const missileAward = formatMissileAward(missileIncident, missileDriver);
+  const missileAward = formatMissileAward(missileIncident);
   if (missileAward) {
     awards.push({ label: '💥 Misil nuclear', value: missileAward });
   }
@@ -257,36 +255,18 @@ function formatStatusSuffix(entry: DriverRaceStats): string {
   return '';
 }
 
-function formatMissileAward(incident: GroupedIncident | null, driver: DriverRaceStats | null): string | null {
-  if (incident) {
-    const names = incident.driversInvolved.map((entry) => entry.name).filter(Boolean);
-    const pairLabel = names.length >= 2 ? `${names[0]} y ${names[1]}` : names[0] ?? `Autos ${incident.carIdsInvolved[0]} y ${incident.carIdsInvolved[1]}`;
-    return `${pairLabel} (${incident.maxImpact.toFixed(2)} km/h de impacto)`;
+function formatMissileAward(incident: GroupedIncident | null): string | null {
+  if (!incident) {
+    return null;
   }
 
-  if (driver) {
-    return `${driver.name} (${driver.maxImpact.toFixed(2)} km/h de impacto)`;
-  }
-
-  return null;
+  const names = incident.driversInvolved.map((entry) => entry.name).filter(Boolean);
+  const pairLabel = names.length >= 2 ? `${names[0]} y ${names[1]}` : names[0] ?? `Autos ${incident.carIdsInvolved[0]} y ${incident.carIdsInvolved[1]}`;
+  return `${pairLabel} (${incident.maxImpact.toFixed(2)} km/h de impacto)`;
 }
 
 function formatAverageLap(value: number | null): string {
   return value == null ? 'Sin tiempo válido' : formatLapTime(Math.round(value));
-}
-
-function buildSafetyUnchangedText(stats: DriverRaceStats[], minActiveDriversForSafetyGain: number): string {
-  const blockedEntries = stats
-    .slice()
-    .sort((left, right) => left.position - right.position)
-    .filter((entry) => entry.safetyChangeReason === 'min-active-drivers' && !entry.inactive)
-    .map((entry) => `P${entry.position} ${entry.name}${formatStatusSuffix(entry)}`);
-
-  if (blockedEntries.length === 0) {
-    return '';
-  }
-
-  return [`mínimo ${minActiveDriversForSafetyGain} pilotos activos requerido para ganar Safety.`, ...blockedEntries].join('\n');
 }
 
 function pickOne<T>(values: T[], compare: (left: T, right: T) => number): T | null {

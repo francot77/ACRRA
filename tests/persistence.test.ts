@@ -86,7 +86,7 @@ function createConfig(resultsDir: string, databasePath: string): AppConfig {
     defaultSafetyRating: 75,
     safetyMemoryFactor: 0.85,
     minActiveDriversForSafetyGain: 3,
-    allowSafetyLossBelowMinDrivers: true,
+    nuclearMissileMinCarImpactKmh: 100,
     nodeEnv: 'test'
   };
 }
@@ -253,8 +253,7 @@ test('prior DNS rating cannot drop just for not racing', (t) => {
     {
       defaultSafetyRating: 75,
       safetyMemoryFactor: 0.85,
-      minActiveDriversForSafetyGain: 3,
-      allowSafetyLossBelowMinDrivers: true
+      minActiveDriversForSafety: 3
     }
   );
 
@@ -330,8 +329,7 @@ test('processor persists oldSafety, raceScore, and newSafety for existing GUID-b
     {
       defaultSafetyRating: config.defaultSafetyRating,
       safetyMemoryFactor: config.safetyMemoryFactor,
-      minActiveDriversForSafetyGain: config.minActiveDriversForSafetyGain,
-      allowSafetyLossBelowMinDrivers: config.allowSafetyLossBelowMinDrivers
+      minActiveDriversForSafety: config.minActiveDriversForSafetyGain
     }
   );
   const expectedDriver = expectedStats.find((entry) => entry.guid === existingGuid);
@@ -345,4 +343,82 @@ test('processor persists oldSafety, raceScore, and newSafety for existing GUID-b
   assert.equal(persistedResult.race_score, expectedDriver.raceScore);
   assert.equal(persistedResult.new_safety, expectedDriver.newSafetyRating);
   assert.equal(persistedDriver.safety_rating, expectedDriver.newSafetyRating);
+});
+
+test('sqlite does not persist changed safety when race is below the minimum active drivers', (t) => {
+  const context = createTempDb();
+  t.after(context.close);
+
+  context.database.prepare(
+    `INSERT INTO drivers (
+      guid,
+      name,
+      safety_rating,
+      races,
+      total_car_incidents,
+      total_env_hits,
+      total_cuts,
+      max_impact,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('guid-dnf', 'Crash Driver', 84, 5, 4, 2, 1, 130, '2026-06-21T00:00:00.000Z');
+
+  const ratedStats = applySafetyRatings(
+    [
+      createStat({ guid: 'guid-clean', name: 'Clean Driver', oldSafetyRating: 80, newSafetyRating: 80 }),
+      createStat({
+        carId: 2,
+        guid: 'guid-dnf',
+        name: 'Crash Driver',
+        position: 2,
+        finished: false,
+        destructiveDnf: true,
+        completedLaps: 0,
+        hasValidResult: false,
+        bestLap: null,
+        avgLap: null,
+        idealLap: null,
+        consistency: null,
+        carIncidentsGrouped: 2,
+        envHits: 1,
+        totalCuts: 1,
+        maxCarImpact: 130,
+        maxEnvImpact: 30,
+        maxImpact: 130,
+        rawCollisionEvents: 3,
+        totalTime: 0,
+        oldSafetyRating: 84,
+        newSafetyRating: 84,
+        safetyChangeReason: 'updated'
+      })
+    ],
+    { 'guid-clean': 80, 'guid-dnf': 84 },
+    {
+      defaultSafetyRating: 75,
+      safetyMemoryFactor: 0.85,
+      minActiveDriversForSafety: 3
+    }
+  );
+
+  context.repositories.races.persist({
+    fileName: 'below-minimum.json',
+    filePath: '/tmp/below-minimum.json',
+    fileHash: 'hash-below-minimum',
+    processedAt: '2026-06-22T00:00:00.000Z',
+    race: createRace('below-minimum.json'),
+    stats: ratedStats
+  });
+
+  const persistedDriver = context.database.prepare('SELECT safety_rating, races FROM drivers WHERE guid = ?').get('guid-dnf') as {
+    safety_rating: number;
+    races: number;
+  };
+  const persistedResult = context.database.prepare(
+    'SELECT old_safety, new_safety FROM race_driver_results WHERE guid = ? ORDER BY id DESC LIMIT 1'
+  ).get('guid-dnf') as { old_safety: number; new_safety: number };
+
+  assert.equal(persistedDriver.safety_rating, 84);
+  assert.equal(persistedDriver.races, 6);
+  assert.equal(persistedResult.old_safety, 84);
+  assert.equal(persistedResult.new_safety, 84);
 });
