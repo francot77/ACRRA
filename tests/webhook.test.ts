@@ -187,7 +187,7 @@ test('configured webhook sends exactly one request with the required race report
   assert.match(embed?.description ?? '', /Vueltas pactadas: 3/);
   assert.equal(embed?.footer?.text, 'Archivo procesado: sample-race.json');
   assert.deepEqual(fieldNames, ['Podio', '⚡ Vuelta rápida', 'Premios', 'Safety', 'Resumen de incidentes']);
-  assert.match(awardsField?.value ?? '', /⚡ Vuelta rápida/);
+  assert.doesNotMatch(awardsField?.value ?? '', /⚡ Vuelta rápida/);
   assert.match(awardsField?.value ?? '', /🧼 Más limpio/);
   assert.match(awardsField?.value ?? '', /🧱 Albañil del día/);
   assert.match(awardsField?.value ?? '', /💥 Misil nuclear/);
@@ -340,8 +340,8 @@ test('report explains unchanged safety below the active-driver minimum without p
   const awardsField = embed.fields.find((field) => field.name === 'Premios');
   const safetyField = embed.fields.find((field) => field.name === 'Safety');
 
-  assert.equal(awardsField?.value, '⚡ Vuelta rápida: Solo Driver (1:31.513)');
-  assert.doesNotMatch(awardsField?.value ?? '', /No aplica|Sin datos|Más limpio|Más consistente|Tortuga digna/);
+  assert.equal(awardsField?.value, '');
+  assert.doesNotMatch(awardsField?.value ?? '', /⚡ Vuelta rápida|No aplica|Sin datos|Más limpio|Más consistente|Tortuga digna/);
   assert.equal(safetyField?.value, 'No puntuable: 1 pilotos activos. Mínimo requerido: 3.');
 });
 
@@ -418,7 +418,7 @@ test('report hides tortuga digna when a single finisher has no real competition'
   );
 
   assert.doesNotMatch(awards, /🐢 Tortuga digna|🧼 Más limpio|📈 Más consistente|No aplica/);
-  assert.match(awards, /⚡ Vuelta rápida: Kanus \(1:31\.513\)/);
+  assert.doesNotMatch(awards, /⚡ Vuelta rápida/);
   assert.match(awards, /🧱 Albañil del día: ramen \(2 golpes al entorno\)/);
   assert.doesNotMatch(awards, /💥 Misil nuclear/);
   assert.match(awards, /🚜 Cono del día: ramen \(59\.00 puntos\)/);

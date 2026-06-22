@@ -74,8 +74,7 @@ export function buildRaceMessage(input: {
   const awardText = awards.map((award) => `${award.label}: ${award.value}`).join('\n');
   const description = [
     `Auto principal: ${input.race.carModel ?? 'unknown'}`,
-    `Vueltas pactadas: ${input.race.raceLaps}`,
-    fastestLap ? `Vuelta más rápida: ${fastestLap.name} (${formatLapTime(fastestLap.bestLap)})` : 'Vuelta más rápida: Sin tiempo válido'
+    `Vueltas pactadas: ${input.race.raceLaps}`
   ].join('\n');
   const footerText = `Archivo procesado: ${input.fileName}`;
   const embed: DiscordEmbed = {
@@ -197,7 +196,6 @@ function buildAwards(
     cone != null &&
     (cone.raceScore < 80 || cone.carIncidentsGrouped > 0 || cone.envHits > 0 || cone.totalCuts > 0 || !cone.finished);
 
-  awards.push({ label: '⚡ Vuelta rápida', value: fastestLap ? `${fastestLap.name} (${formatLapTime(fastestLap.bestLap)})` : 'Sin tiempo válido' });
   if (cleanest) {
     awards.push({ label: '🧼 Más limpio', value: formatDriver(cleanest) });
   }
