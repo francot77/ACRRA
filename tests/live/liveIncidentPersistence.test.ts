@@ -30,6 +30,7 @@ test('finalized env incident persists incident row and isolated snapshots', asyn
 
   const incidents = context.repositories.liveIncidents.list();
   assert.equal(incidents.length, 1);
+  assert.match(incidents[0]?.incidentUid ?? '', /^live-incident-\d+-collision_with_env-9-1$/);
   assert.equal(incidents[0]?.type, 'collision_with_env');
   assert.equal(incidents[0]?.carId, 9);
   assert.equal(incidents[0]?.otherCarId, null);
@@ -64,6 +65,7 @@ test('finalized car-car incident persists both cars snapshot timelines', async (
 
   const incidents = context.repositories.liveIncidents.list();
   assert.equal(incidents.length, 1);
+  assert.match(incidents[0]?.incidentUid ?? '', /^live-incident-\d+-collision_with_car-7-8-1$/);
   assert.equal(incidents[0]?.type, 'collision_with_car');
   assert.equal(incidents[0]?.carId, 7);
   assert.equal(incidents[0]?.otherCarId, 8);
@@ -92,6 +94,23 @@ test('live telemetry stays out of SQLite until the incident package is finalized
   const incidents = context.repositories.liveIncidents.list();
   assert.equal(incidents.length, 1);
   assert.equal(incidents[0]?.snapshots.length, 2);
+});
+
+test('restarting the UDP client does not collide incident UIDs with previously persisted incidents', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'motassettorr-live-incident-restart-'));
+  const database = openDatabase(join(directory, 'ac-race-monitor.sqlite'));
+  const repositories = createRepositories(database);
+
+  await emitAndFinalizeEnvIncident(repositories, join(directory, 'ac-race-monitor.sqlite'));
+  await emitAndFinalizeEnvIncident(repositories, join(directory, 'ac-race-monitor.sqlite'));
+
+  const incidents = repositories.liveIncidents.list();
+  t.after(() => database.close());
+
+  assert.equal(incidents.length, 2);
+  assert.notEqual(incidents[0]?.incidentUid, incidents[1]?.incidentUid);
+  assert.equal(incidents[0]?.snapshots.length, 3);
+  assert.equal(incidents[1]?.snapshots.length, 3);
 });
 
 class FakeSocket extends EventEmitter {
@@ -142,6 +161,7 @@ function createConfig(databasePath: string): AppConfig {
     incidentsDiscordWebhookUrl: '',
     incidentsWebhookEnabled: false,
     liveUdpEnabled: true,
+    liveUdpDebug: false,
     acUdpServerHost: '127.0.0.1',
     acUdpServerPluginPort: 11000,
     acUdpPluginListenPort: 12000,
@@ -162,6 +182,29 @@ function createConfig(databasePath: string): AppConfig {
     nuclearMissileMinCarImpactKmh: 100,
     nodeEnv: 'test',
   };
+}
+
+async function emitAndFinalizeEnvIncident(
+  repositories: ReturnType<typeof createRepositories>,
+  databasePath: string
+): Promise<void> {
+  const socket = new FakeSocket();
+  const client = await startAcUdpClient(createConfig(databasePath), {
+    socketFactory: () => socket as unknown as Socket,
+    liveIncidentRepository: repositories.liveIncidents,
+    logger: () => undefined,
+  });
+
+  socket.emitMessage(createCarUpdatePacket({ carId: 9, posX: -12 }), fakeRemote());
+  await sleep(10);
+  socket.emitMessage(createCarUpdatePacket({ carId: 9, posX: -11 }), fakeRemote());
+  await sleep(10);
+  socket.emitMessage(createCollisionWithEnvPacket({ carId: 9, impactSpeed: 41.75 }), fakeRemote());
+  await sleep(10);
+  socket.emitMessage(createCarUpdatePacket({ carId: 9, posX: -9 }), fakeRemote());
+  await sleep(40);
+  client.getFinalizedIncidents();
+  await client.close();
 }
 
 function createCarUpdatePacket(overrides: { carId?: number; posX?: number; posY?: number; posZ?: number } = {}): Buffer {

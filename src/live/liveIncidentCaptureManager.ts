@@ -74,7 +74,7 @@ export class LiveIncidentCaptureManager {
     }
 
     const incident: PendingLiveIncident = {
-      incidentId: `live-incident-${this.nextIncidentSequence++}`,
+      incidentId: buildIncidentId(event, this.nextIncidentSequence++),
       type: event.type,
       firstReceivedAtMs: event.receivedAtMs,
       lastReceivedAtMs: event.receivedAtMs,
@@ -251,6 +251,11 @@ function appendUniqueSnapshot(target: LiveCarSnapshot[], snapshot: LiveCarSnapsh
   }
 
   target.push(snapshot);
+}
+
+function buildIncidentId(event: LiveCollisionEvent, sequence: number): string {
+  const participantIds = getTrackedCarIds(event).sort((left, right) => left - right).join('-');
+  return `live-incident-${event.receivedAtMs}-${event.type}-${participantIds}-${sequence}`;
 }
 
 function distanceBetween(left: Vector3, right: Vector3): number {
