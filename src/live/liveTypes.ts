@@ -16,24 +16,30 @@ type BaseLivePacket = {
 
 export type LiveCarUpdatePacket = BaseLivePacket & {
   type: 'car_update';
-  carId?: number;
-  speedKmh?: number;
-  worldPosition?: Vector3;
+  carId: number;
+  worldPosition: Vector3;
+  velocity: Vector3;
+  speedKmh: number;
+  gear: number;
+  engineRpm: number;
+  normalizedSplinePos: number;
 };
 
 export type LiveCollisionWithCarPacket = BaseLivePacket & {
   type: 'collision_with_car';
-  carId?: number;
-  otherCarId?: number;
-  impactSpeedKmh?: number;
-  worldPosition?: Vector3;
+  carId: number;
+  otherCarId: number;
+  impactSpeed: number;
+  worldPosition: Vector3;
+  relativePosition: Vector3;
 };
 
 export type LiveCollisionWithEnvPacket = BaseLivePacket & {
   type: 'collision_with_env';
-  carId?: number;
-  impactSpeedKmh?: number;
-  worldPosition?: Vector3;
+  carId: number;
+  impactSpeed: number;
+  worldPosition: Vector3;
+  relativePosition: Vector3;
 };
 
 export type UnknownLivePacket = BaseLivePacket & {

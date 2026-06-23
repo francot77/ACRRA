@@ -119,3 +119,13 @@
 - Negative awards now render only when backed by real data: `envHits > 0` for `🧱 Albañil`, `maxImpact > 0` for `💥 Misil`, `destructiveDnf === true` for `🪦 DNF destructivo`, and `🚜 Cono` only when the worst active driver was actually poor/incident-prone.
 - `tests/webhook.test.ts` now covers the cleanup cases explicitly, including the one-finisher `Kanus` + DNF `ramen` scenario and the absence of `No aplica` lines.
 - Test fixture helper `createStat()` was corrected to preserve explicit `null` lap/consistency values instead of coercing them back to default times, which previously created false-positive award candidates.
+
+## Live UDP Smoke Protocol Repair Slice
+
+- Replaced the live smoke parser's fake JSON/delimited assumption with the real Assetto Corsa server plugin binary layout for packet `53` (`car_update`) and client-event packet `130` with event types `10` (`collision_with_car`) and `11` (`collision_with_env`).
+- `car_update` smoke parsing now reads `carId`, `worldPos`, `velocity`, `gear`, `engineRPM`, and `normalizedSplinePos`, plus derives `speedKmh` from the velocity vector for readable logs.
+- Collision smoke parsing now reads real `impactSpeed`, `worldPos`, and `relPos` fields for both car-vs-car and env impacts.
+- The realtime report enable command now uses packet id `200` with `intervalMs` encoded as `uint16le`, matching the verified protocol.
+- `src/live/acUdpClient.ts` smoke logs now expose protocol-aligned semantics (`car_update`, `collision_with_car`, `collision_with_env`) with useful numeric fields like `carId`, `otherCarId`, `impact`, `spline`, `gear`, and `engineRpm`.
+- Added focused regression coverage for binary live packet parsing, smoke-gate completion after all three packet kinds, and realtime-enable command/log behavior.
+- Batch `RACE.json` ingestion, persistence, matching, snapshots, verdicts, and later phases were intentionally left untouched.

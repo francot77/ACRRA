@@ -1,7 +1,7 @@
 import dgram, { Socket } from 'node:dgram';
 import { AppConfig } from '../config';
 import { LiveSmokeGate } from './smokeGate';
-import { LiveUdpRuntimeStatus } from './liveTypes';
+import { AcLivePacket, LiveUdpRuntimeStatus } from './liveTypes';
 import { buildAssumedRealtimeReportEnableCommand, parseAcUdpPacket } from './udpProtocolParser';
 
 type LogLevel = 'info' | 'warn' | 'error';
@@ -43,9 +43,9 @@ export async function startAcUdpClient(
     const stateAfter = smokeGate.observe(packet.type, new Date(packet.receivedAt));
 
     logger('info', 'live-udp', 'Received live UDP packet', {
-      packetType: packet.type,
       remoteAddress: remote.address,
       remotePort: remote.port,
+      ...buildPacketLogFields(packet),
       smokeGateReady: stateAfter.ready,
       captureEnabled: stateAfter.captureEnabled
     });
@@ -74,13 +74,18 @@ export async function startAcUdpClient(
     if (error) {
       logger('error', 'live-udp', 'Failed to send realtime report enable command', {
         error: error.message,
-        assumption: 'binary-v1 opcode=1, intervalMs little-endian uint32'
+        protocol: 'ac-server-plugin-realtime-report-enable',
+        packetId: 200,
+        intervalEncoding: 'uint16le'
       });
       return;
     }
 
     logger('info', 'live-udp', 'Sent realtime report enable command', {
-      assumption: 'binary-v1 opcode=1, intervalMs little-endian uint32',
+      protocol: 'ac-server-plugin-realtime-report-enable',
+      packetId: 200,
+      intervalEncoding: 'uint16le',
+      intervalMs: config.realtimeReportIntervalMs,
       targetHost: config.acUdpServerHost,
       targetPort: config.acUdpServerPluginPort,
       payloadHex: command.toString('hex')
@@ -124,4 +129,42 @@ function defaultLogger(level: LogLevel, component: string, message: string, fiel
   }
 
   console.info(payload);
+}
+
+function buildPacketLogFields(packet: Exclude<AcLivePacket, { type: 'unknown' }>): Record<string, unknown> {
+  if (packet.type === 'car_update') {
+    return {
+      packetType: packet.type,
+      carId: packet.carId,
+      speedKmh: roundMetric(packet.speedKmh),
+      spline: roundMetric(packet.normalizedSplinePos, 4),
+      gear: packet.gear,
+      engineRpm: packet.engineRpm,
+      worldPos: packet.worldPosition,
+      velocity: packet.velocity,
+    };
+  }
+
+  if (packet.type === 'collision_with_car') {
+    return {
+      packetType: packet.type,
+      carId: packet.carId,
+      otherCarId: packet.otherCarId,
+      impact: roundMetric(packet.impactSpeed),
+      worldPos: packet.worldPosition,
+      relPos: packet.relativePosition,
+    };
+  }
+
+  return {
+    packetType: packet.type,
+    carId: packet.carId,
+    impact: roundMetric(packet.impactSpeed),
+    worldPos: packet.worldPosition,
+    relPos: packet.relativePosition,
+  };
+}
+
+function roundMetric(value: number, digits = 2): number {
+  return Number(value.toFixed(digits));
 }
