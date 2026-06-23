@@ -5,7 +5,7 @@ import type { RemoteInfo, Socket } from 'node:dgram';
 import type { AppConfig } from '../../src/config';
 import { startAcUdpClient, type LiveLogger } from '../../src/live/acUdpClient';
 
-test('acUdpClient uses the real realtime enable packet and logs real packet semantics', async () => {
+test('acUdpClient uses the real realtime enable packet and logs real packet semantics when live UDP debug is enabled', async () => {
   const socket = new FakeSocket();
   const logs: Array<{ level: string; component: string; message: string; fields: Record<string, unknown> }> = [];
   const logger: LiveLogger = (level, component, message, fields) => {
@@ -84,6 +84,27 @@ test('acUdpClient uses the real realtime enable packet and logs real packet sema
   await client.close();
 });
 
+test('acUdpClient suppresses per-packet logs when live UDP debug is disabled', async () => {
+  const socket = new FakeSocket();
+  const logs: Array<{ level: string; component: string; message: string; fields: Record<string, unknown> }> = [];
+  const logger: LiveLogger = (level, component, message, fields) => {
+    logs.push({ level, component, message, fields });
+  };
+
+  const client = await startAcUdpClient(createConfig({ liveUdpDebug: false }), {
+    socketFactory: () => socket as unknown as Socket,
+    logger,
+  });
+
+  socket.emitMessage(createCarUpdatePacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 33 });
+  socket.emitMessage(createCollisionWithCarPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 32 });
+
+  const packetLogs = logs.filter((entry) => entry.message === 'Received live UDP packet');
+  assert.equal(packetLogs.length, 0);
+
+  await client.close();
+});
+
 class FakeSocket extends EventEmitter {
   readonly sentPackets: Array<{ payload: Buffer; port: number; host: string }> = [];
 
@@ -105,7 +126,7 @@ class FakeSocket extends EventEmitter {
   }
 }
 
-function createConfig(): AppConfig {
+function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     resultsDir: '/app/results',
     databasePath: '/app/data/ac-race-monitor.sqlite',
@@ -113,6 +134,7 @@ function createConfig(): AppConfig {
     incidentsDiscordWebhookUrl: '',
     incidentsWebhookEnabled: false,
     liveUdpEnabled: true,
+    liveUdpDebug: true,
     acUdpServerHost: '127.0.0.1',
     acUdpServerPluginPort: 11000,
     acUdpPluginListenPort: 12000,
@@ -132,6 +154,7 @@ function createConfig(): AppConfig {
     minActiveDriversForSafetyGain: 3,
     nuclearMissileMinCarImpactKmh: 100,
     nodeEnv: 'test',
+    ...overrides,
   };
 }
 

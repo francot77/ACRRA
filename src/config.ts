@@ -7,6 +7,7 @@ const envSchema = z.object({
   INCIDENTS_DISCORD_WEBHOOK_URL: z.string().default(''),
   INCIDENTS_WEBHOOK_ENABLED: z.enum(['true', 'false']).default('false'),
   LIVE_UDP_ENABLED: z.enum(['true', 'false']).default('false'),
+  LIVE_UDP_DEBUG: z.enum(['true', 'false']).default('false'),
   AC_UDP_SERVER_HOST: z.string().default('127.0.0.1'),
   AC_UDP_SERVER_PLUGIN_PORT: z.coerce.number().int().positive().default(11000),
   AC_UDP_PLUGIN_LISTEN_PORT: z.coerce.number().int().positive().default(12000),
@@ -35,6 +36,7 @@ export type AppConfig = {
   incidentsDiscordWebhookUrl: string;
   incidentsWebhookEnabled: boolean;
   liveUdpEnabled: boolean;
+  liveUdpDebug: boolean;
   acUdpServerHost: string;
   acUdpServerPluginPort: number;
   acUdpPluginListenPort: number;
@@ -66,6 +68,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     incidentsDiscordWebhookUrl: parsed.INCIDENTS_DISCORD_WEBHOOK_URL,
     incidentsWebhookEnabled: parsed.INCIDENTS_WEBHOOK_ENABLED === 'true',
     liveUdpEnabled: parsed.LIVE_UDP_ENABLED === 'true',
+    liveUdpDebug: parsed.LIVE_UDP_DEBUG === 'true',
     acUdpServerHost: parsed.AC_UDP_SERVER_HOST,
     acUdpServerPluginPort: parsed.AC_UDP_SERVER_PLUGIN_PORT,
     acUdpPluginListenPort: parsed.AC_UDP_PLUGIN_LISTEN_PORT,

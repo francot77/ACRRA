@@ -110,13 +110,15 @@ export async function startAcUdpClient(
 
     incidentDebug.maybeLogSummary(packet.receivedAtMs, incidentCaptureManager);
 
-    logger('info', 'live-udp', 'Received live UDP packet', {
-      remoteAddress: remote.address,
-      remotePort: remote.port,
-      ...buildPacketLogFields(packet),
-      smokeGateReady: stateAfter.ready,
-      captureEnabled: stateAfter.captureEnabled
-    });
+    if (config.liveUdpDebug) {
+      logger('info', 'live-udp', 'Received live UDP packet', {
+        remoteAddress: remote.address,
+        remotePort: remote.port,
+        ...buildPacketLogFields(packet),
+        smokeGateReady: stateAfter.ready,
+        captureEnabled: stateAfter.captureEnabled
+      });
+    }
 
     if (!stateBefore.ready && stateAfter.ready) {
       logger('info', 'live-udp', 'Live UDP smoke gate satisfied', stateAfter);
