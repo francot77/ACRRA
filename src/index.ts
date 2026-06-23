@@ -6,6 +6,7 @@ import { buildRaceMessage } from './discord/buildRaceMessage';
 import { sendWebhook } from './discord/sendWebhook';
 import { openDatabase } from './db/db';
 import { createRepositories, Repositories } from './db/repositories';
+import { startAcUdpClient } from './live/acUdpClient';
 import { applySafetyRatings } from './parser/calculateSafety';
 import { calculateDriverStats } from './parser/calculateDriverStats';
 import { groupIncidents } from './parser/groupIncidents';
@@ -93,16 +94,20 @@ export async function main(): Promise<void> {
   const database = openDatabase(config.databasePath);
   const repositories = createRepositories(database);
   const processRaceFile = createRaceProcessor(config, repositories);
+  const liveUdpClient = config.liveUdpEnabled ? await startAcUdpClient(config, { logger: log }) : null;
   const watcher = await watchRaceResults({ config, repositories, processFile: processRaceFile });
 
   log('info', 'bootstrap', 'AC race monitor started', {
     resultsDir: config.resultsDir,
     watchGlob: config.watchGlob,
-    processedFileStrategy: config.processedFileStrategy
+    processedFileStrategy: config.processedFileStrategy,
+    liveUdpEnabled: config.liveUdpEnabled,
+    liveUdpSmokeGateReady: liveUdpClient?.getStatus().smokeGate.ready ?? false
   });
 
   const shutdown = async (signal: string): Promise<void> => {
     log('info', 'bootstrap', 'Shutting down AC race monitor', { signal });
+    await liveUdpClient?.close();
     await watcher.close();
     database.close();
     process.exit(0);
@@ -116,7 +121,7 @@ export async function main(): Promise<void> {
   });
 }
 
-function log(level: 'info' | 'error', component: string, message: string, fields: Record<string, unknown>): void {
+function log(level: 'info' | 'warn' | 'error', component: string, message: string, fields: Record<string, unknown>): void {
   const payload = JSON.stringify({ level, component, message, ...fields });
   if (level === 'error') {
     console.error(payload);

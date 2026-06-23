@@ -4,10 +4,16 @@ services:
       context: .
     image: motassettorr:oracle
     restart: unless-stopped
+    network_mode: host
     environment:
       RESULTS_DIR: /app/results
       DATABASE_PATH: /app/data/ac-race-monitor.sqlite
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      LIVE_UDP_ENABLED: ${LIVE_UDP_ENABLED:-false}
+      AC_UDP_SERVER_HOST: ${AC_UDP_SERVER_HOST:-127.0.0.1}
+      AC_UDP_SERVER_PLUGIN_PORT: ${AC_UDP_SERVER_PLUGIN_PORT:-11000}
+      AC_UDP_PLUGIN_LISTEN_PORT: ${AC_UDP_PLUGIN_LISTEN_PORT:-12000}
+      REALTIME_REPORT_INTERVAL_MS: ${REALTIME_REPORT_INTERVAL_MS:-250}
       PROCESSED_FILE_STRATEGY: sqlite
       SCAN_ON_START: ${SCAN_ON_START:-true}
       MIN_FILE_AGE_MS: ${MIN_FILE_AGE_MS:-3000}
