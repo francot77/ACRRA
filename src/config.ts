@@ -14,6 +14,7 @@ const envSchema = z.object({
   SNAPSHOT_RING_BUFFER_MS: z.coerce.number().int().positive().default(10000),
   INCIDENT_PRE_MS: z.coerce.number().int().nonnegative().default(3000),
   INCIDENT_POST_MS: z.coerce.number().int().nonnegative().default(1500),
+  INCIDENT_DEBUG: z.enum(['true', 'false']).default('false'),
   INCIDENT_MATCH_MAX_DISTANCE_M: z.coerce.number().positive().default(30),
   INCIDENT_MATCH_MAX_IMPACT_DIFF_KMH: z.coerce.number().nonnegative().default(35),
   PROCESSED_FILE_STRATEGY: z.literal('sqlite').default('sqlite'),
@@ -41,6 +42,7 @@ export type AppConfig = {
   snapshotRingBufferMs: number;
   incidentPreMs: number;
   incidentPostMs: number;
+  incidentDebug: boolean;
   incidentMatchMaxDistanceM: number;
   incidentMatchMaxImpactDiffKmh: number;
   processedFileStrategy: 'sqlite';
@@ -71,6 +73,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     snapshotRingBufferMs: parsed.SNAPSHOT_RING_BUFFER_MS,
     incidentPreMs: parsed.INCIDENT_PRE_MS,
     incidentPostMs: parsed.INCIDENT_POST_MS,
+    incidentDebug: parsed.INCIDENT_DEBUG === 'true',
     incidentMatchMaxDistanceM: parsed.INCIDENT_MATCH_MAX_DISTANCE_M,
     incidentMatchMaxImpactDiffKmh: parsed.INCIDENT_MATCH_MAX_IMPACT_DIFF_KMH,
     processedFileStrategy: parsed.PROCESSED_FILE_STRATEGY,

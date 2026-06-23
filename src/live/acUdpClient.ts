@@ -33,25 +33,54 @@ export async function startAcUdpClient(
   const smokeGate = dependencies?.smokeGate ?? new LiveSmokeGate();
   const snapshotRecorder = dependencies?.snapshotRecorder ?? new LiveSnapshotRecorder(config.snapshotRingBufferMs);
   const liveIncidentRepository = dependencies?.liveIncidentRepository;
+  const incidentDebug = createIncidentDebugLogger(config, logger, snapshotRecorder);
   const incidentCaptureManager = new LiveIncidentCaptureManager(snapshotRecorder, {
     incidentPreMs: config.incidentPreMs,
     incidentPostMs: config.incidentPostMs,
-    onFinalize: (incident) => {
+    debugLogger: incidentDebug,
+    onFinalize: (incident, finalizeDebug) => {
       if (!liveIncidentRepository) {
+        incidentDebug('Skipped live incident persistence because repository is unavailable', {
+          incidentUid: incident.incidentId,
+          incidentType: incident.type,
+          totalSnapshotCount: finalizeDebug.totalSnapshotCount,
+          reason: 'liveIncidentRepository missing',
+        });
         return;
       }
 
-      const result = liveIncidentRepository.persist({ incident });
-      logger('info', 'live-udp', result.status === 'inserted' ? 'Persisted finalized live incident' : 'Skipped duplicate finalized live incident', {
-        incidentUid: incident.incidentId,
-        incidentType: incident.type,
-        trackedCars: incident.cars.map((car) => car.carId),
-        eventCount: incident.events.length,
-        snapshotCount: result.status === 'inserted'
-          ? result.snapshotCount
-          : incident.cars.reduce((count, car) => count + car.snapshots.length, 0),
-        persistenceStatus: result.status,
-      });
+      try {
+        const result = liveIncidentRepository.persist({ incident });
+        logger('info', 'live-udp', result.status === 'inserted' ? 'Persisted finalized live incident' : 'Skipped duplicate finalized live incident', {
+          incidentUid: incident.incidentId,
+          incidentType: incident.type,
+          trackedCars: incident.cars.map((car) => car.carId),
+          eventCount: incident.events.length,
+          snapshotCount: result.status === 'inserted'
+            ? result.snapshotCount
+            : incident.cars.reduce((count, car) => count + car.snapshots.length, 0),
+          persistenceStatus: result.status,
+        });
+        incidentDebug('Finalized live incident persisted', {
+          incidentUid: incident.incidentId,
+          incidentType: incident.type,
+          postLookupCounts: finalizeDebug.postLookupCounts,
+          totalPersistedCount: result.status === 'inserted' ? result.snapshotCount : finalizeDebug.totalSnapshotCount,
+          persistenceStatus: result.status,
+        });
+      } catch (error) {
+        logger('error', 'live-udp', 'Failed to persist finalized live incident', {
+          incidentUid: incident.incidentId,
+          incidentType: incident.type,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        incidentDebug('Failed to persist finalized live incident', {
+          incidentUid: incident.incidentId,
+          incidentType: incident.type,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     }
   });
 
@@ -70,7 +99,7 @@ export async function startAcUdpClient(
     }
 
     const stateBefore = smokeGate.getState();
-    const stateAfter = smokeGate.observe(packet.type, new Date(packet.receivedAt));
+    const stateAfter = smokeGate.observe(packet.type, new Date(packet.receivedAtMs));
 
     if (packet.type === 'car_update') {
       const snapshot = snapshotRecorder.recordCarUpdate(packet);
@@ -78,6 +107,8 @@ export async function startAcUdpClient(
     } else {
       incidentCaptureManager.observeCollision(toCollisionEvent(packet));
     }
+
+    incidentDebug.maybeLogSummary(packet.receivedAtMs, incidentCaptureManager);
 
     logger('info', 'live-udp', 'Received live UDP packet', {
       remoteAddress: remote.address,
@@ -213,7 +244,7 @@ function roundMetric(value: number, digits = 2): number {
 }
 
 function toCollisionEvent(packet: Exclude<AcLivePacket, { type: 'car_update' | 'unknown' }>): LiveCollisionEvent {
-  const receivedAtMs = Date.parse(packet.receivedAt);
+  const receivedAtMs = packet.receivedAtMs;
 
   if (packet.type === 'collision_with_car') {
     return {
@@ -237,4 +268,41 @@ function toCollisionEvent(packet: Exclude<AcLivePacket, { type: 'car_update' | '
     worldPosition: packet.worldPosition,
     relativePosition: packet.relativePosition,
   };
+}
+
+type IncidentDebugLoggerFn = ((message: string, fields: Record<string, unknown>) => void) & {
+  maybeLogSummary: (nowMs: number, incidentCaptureManager: LiveIncidentCaptureManager) => void;
+};
+
+function createIncidentDebugLogger(
+  config: AppConfig,
+  logger: LiveLogger,
+  snapshotRecorder: LiveSnapshotRecorder
+): IncidentDebugLoggerFn {
+  let nextSummaryAtMs = 0;
+  const summaryIntervalMs = 5000;
+
+  const debugLogger = ((message: string, fields: Record<string, unknown>) => {
+    if (!config.incidentDebug) {
+      return;
+    }
+
+    logger('info', 'live-incident-debug', message, fields);
+  }) as IncidentDebugLoggerFn;
+
+  debugLogger.maybeLogSummary = (nowMs, incidentCaptureManager) => {
+    if (!config.incidentDebug || nowMs < nextSummaryAtMs) {
+      return;
+    }
+
+    nextSummaryAtMs = nowMs + summaryIntervalMs;
+    logger('info', 'live-incident-debug', 'Live incident debug summary', {
+      ts: new Date(nowMs).toISOString(),
+      ringBufferCarIds: snapshotRecorder.getTrackedCarIds(),
+      pendingIncidentCount: incidentCaptureManager.getPendingIncidentCount(nowMs),
+      finalizedIncidentCount: incidentCaptureManager.getFinalizedIncidentCount(nowMs),
+    });
+  };
+
+  return debugLogger;
 }

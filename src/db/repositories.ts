@@ -454,12 +454,13 @@ export function createRepositories(database: AppDatabase) {
           });
           const incidentId = Number(incidentInsert.lastInsertRowid);
           let snapshotCount = 0;
+          const relativeToMs = representativeEvent.receivedAtMs;
 
           for (const car of input.incident.cars) {
             snapshotCount += persistSnapshots(
               insertLiveIncidentSnapshotStatement,
               incidentId,
-              input.incident.firstReceivedAtMs,
+              relativeToMs,
               car
             );
           }

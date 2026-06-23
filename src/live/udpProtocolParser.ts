@@ -16,27 +16,28 @@ const COLLISION_WITH_ENV_EVENT_ID = 11;
 const REALTIME_REPORT_ENABLE_PACKET_ID = 200;
 
 export function parseAcUdpPacket(raw: Buffer, receivedAt = new Date()): AcLivePacket {
-  const timestamp = receivedAt.toISOString();
+  const receivedAtMs = receivedAt.getTime();
+  const timestamp = new Date(receivedAtMs).toISOString();
 
-  const binaryPacket = tryParseBinaryPacket(raw, timestamp);
+  const binaryPacket = tryParseBinaryPacket(raw, timestamp, receivedAtMs);
   if (binaryPacket) {
     return binaryPacket;
   }
 
   const jsonPacket = tryParseJsonPacket(raw);
   if (jsonPacket) {
-    return mapKnownPacket(jsonPacket, raw, timestamp);
+    return mapKnownPacket(jsonPacket, raw, timestamp, receivedAtMs);
   }
 
   const textPacket = raw.toString('utf8').trim();
   if (textPacket.length > 0) {
     const delimitedPacket = parseDelimitedPacket(textPacket);
     if (delimitedPacket) {
-      return mapKnownPacket(delimitedPacket, raw, timestamp);
+      return mapKnownPacket(delimitedPacket, raw, timestamp, receivedAtMs);
     }
   }
 
-  return createUnknownPacket(raw, timestamp, 'Unsupported packet format');
+  return createUnknownPacket(raw, timestamp, receivedAtMs, 'Unsupported packet format');
 }
 
 export function buildAssumedRealtimeReportEnableCommand(intervalMs: number): Buffer {
@@ -46,18 +47,18 @@ export function buildAssumedRealtimeReportEnableCommand(intervalMs: number): Buf
   return payload;
 }
 
-function tryParseBinaryPacket(raw: Buffer, receivedAt: string): AcLivePacket | null {
+function tryParseBinaryPacket(raw: Buffer, receivedAt: string, receivedAtMs: number): AcLivePacket | null {
   if (raw.length < 1) {
     return null;
   }
 
   const packetId = raw.readUInt8(0);
   if (packetId === CAR_UPDATE_PACKET_ID) {
-    return parseCarUpdatePacket(raw, receivedAt);
+    return parseCarUpdatePacket(raw, receivedAt, receivedAtMs);
   }
 
   if (packetId === CLIENT_EVENT_PACKET_ID) {
-    return parseClientEventPacket(raw, receivedAt);
+    return parseClientEventPacket(raw, receivedAt, receivedAtMs);
   }
 
   return null;
@@ -97,10 +98,10 @@ function parseDelimitedPacket(source: string): JsonPacket | null {
   return packet;
 }
 
-function mapKnownPacket(packet: JsonPacket, raw: Buffer, receivedAt: string): AcLivePacket {
+function mapKnownPacket(packet: JsonPacket, raw: Buffer, receivedAt: string, receivedAtMs: number): AcLivePacket {
   const packetKind = normalizePacketKind(packet.type ?? packet.packetType ?? packet.event);
   if (!packetKind) {
-    return createUnknownPacket(raw, receivedAt, 'Packet type not recognized');
+    return createUnknownPacket(raw, receivedAt, receivedAtMs, 'Packet type not recognized');
   }
 
   if (packetKind === 'car_update') {
@@ -111,12 +112,13 @@ function mapKnownPacket(packet: JsonPacket, raw: Buffer, receivedAt: string): Ac
     const engineRpm = toOptionalNumber(packet.engineRpm);
     const normalizedSplinePos = toOptionalNumber(packet.normalizedSplinePos);
     if (!worldPosition || !velocity || carId === undefined || gear === undefined || engineRpm === undefined || normalizedSplinePos === undefined) {
-      return createUnknownPacket(raw, receivedAt, 'Incomplete car_update packet');
+      return createUnknownPacket(raw, receivedAt, receivedAtMs, 'Incomplete car_update packet');
     }
 
     const result: LiveCarUpdatePacket = {
       type: 'car_update',
       receivedAt,
+      receivedAtMs,
       raw,
       carId,
       worldPosition,
@@ -136,12 +138,13 @@ function mapKnownPacket(packet: JsonPacket, raw: Buffer, receivedAt: string): Ac
     const otherCarId = toOptionalNumber(packet.otherCarId);
     const impactSpeed = toOptionalNumber(packet.impactSpeedKmh ?? packet.impactSpeed);
     if (!worldPosition || !relativePosition || carId === undefined || otherCarId === undefined || impactSpeed === undefined) {
-      return createUnknownPacket(raw, receivedAt, 'Incomplete collision_with_car packet');
+      return createUnknownPacket(raw, receivedAt, receivedAtMs, 'Incomplete collision_with_car packet');
     }
 
     const result: LiveCollisionWithCarPacket = {
       type: 'collision_with_car',
       receivedAt,
+      receivedAtMs,
       raw,
       carId,
       otherCarId,
@@ -157,12 +160,13 @@ function mapKnownPacket(packet: JsonPacket, raw: Buffer, receivedAt: string): Ac
   const carId = toOptionalNumber(packet.carId);
   const impactSpeed = toOptionalNumber(packet.impactSpeedKmh ?? packet.impactSpeed);
   if (!worldPosition || !relativePosition || carId === undefined || impactSpeed === undefined) {
-    return createUnknownPacket(raw, receivedAt, 'Incomplete collision_with_env packet');
+    return createUnknownPacket(raw, receivedAt, receivedAtMs, 'Incomplete collision_with_env packet');
   }
 
   const result: LiveCollisionWithEnvPacket = {
     type: 'collision_with_env',
     receivedAt,
+    receivedAtMs,
     raw,
     carId,
     impactSpeed,
@@ -172,10 +176,10 @@ function mapKnownPacket(packet: JsonPacket, raw: Buffer, receivedAt: string): Ac
   return result;
 }
 
-function parseCarUpdatePacket(raw: Buffer, receivedAt: string): AcLivePacket {
+function parseCarUpdatePacket(raw: Buffer, receivedAt: string, receivedAtMs: number): AcLivePacket {
   const expectedLength = 33;
   if (raw.length < expectedLength) {
-    return createUnknownPacket(raw, receivedAt, `CarUpdate packet too short: expected >= ${expectedLength} bytes, got ${raw.length}`);
+    return createUnknownPacket(raw, receivedAt, receivedAtMs, `CarUpdate packet too short: expected >= ${expectedLength} bytes, got ${raw.length}`);
   }
 
   const worldPosition = readVector3(raw, 2);
@@ -184,6 +188,7 @@ function parseCarUpdatePacket(raw: Buffer, receivedAt: string): AcLivePacket {
   return {
     type: 'car_update',
     receivedAt,
+    receivedAtMs,
     raw,
     carId: raw.readUInt8(1),
     worldPosition,
@@ -195,21 +200,22 @@ function parseCarUpdatePacket(raw: Buffer, receivedAt: string): AcLivePacket {
   };
 }
 
-function parseClientEventPacket(raw: Buffer, receivedAt: string): AcLivePacket {
+function parseClientEventPacket(raw: Buffer, receivedAt: string, receivedAtMs: number): AcLivePacket {
   if (raw.length < 2) {
-    return createUnknownPacket(raw, receivedAt, `Client event packet too short: expected >= 2 bytes, got ${raw.length}`);
+    return createUnknownPacket(raw, receivedAt, receivedAtMs, `Client event packet too short: expected >= 2 bytes, got ${raw.length}`);
   }
 
   const eventType = raw.readUInt8(1);
   if (eventType === COLLISION_WITH_CAR_EVENT_ID) {
     const expectedLength = 32;
     if (raw.length < expectedLength) {
-      return createUnknownPacket(raw, receivedAt, `collision_with_car packet too short: expected >= ${expectedLength} bytes, got ${raw.length}`);
+      return createUnknownPacket(raw, receivedAt, receivedAtMs, `collision_with_car packet too short: expected >= ${expectedLength} bytes, got ${raw.length}`);
     }
 
     return {
       type: 'collision_with_car',
       receivedAt,
+      receivedAtMs,
       raw,
       carId: raw.readUInt8(2),
       otherCarId: raw.readUInt8(3),
@@ -222,12 +228,13 @@ function parseClientEventPacket(raw: Buffer, receivedAt: string): AcLivePacket {
   if (eventType === COLLISION_WITH_ENV_EVENT_ID) {
     const expectedLength = 31;
     if (raw.length < expectedLength) {
-      return createUnknownPacket(raw, receivedAt, `collision_with_env packet too short: expected >= ${expectedLength} bytes, got ${raw.length}`);
+      return createUnknownPacket(raw, receivedAt, receivedAtMs, `collision_with_env packet too short: expected >= ${expectedLength} bytes, got ${raw.length}`);
     }
 
     return {
       type: 'collision_with_env',
       receivedAt,
+      receivedAtMs,
       raw,
       carId: raw.readUInt8(2),
       impactSpeed: raw.readFloatLE(3),
@@ -236,13 +243,14 @@ function parseClientEventPacket(raw: Buffer, receivedAt: string): AcLivePacket {
     };
   }
 
-  return createUnknownPacket(raw, receivedAt, `Unsupported client event type: ${eventType}`);
+  return createUnknownPacket(raw, receivedAt, receivedAtMs, `Unsupported client event type: ${eventType}`);
 }
 
-function createUnknownPacket(raw: Buffer, receivedAt: string, reason: string): UnknownLivePacket {
+function createUnknownPacket(raw: Buffer, receivedAt: string, receivedAtMs: number, reason: string): UnknownLivePacket {
   return {
     type: 'unknown',
     receivedAt,
+    receivedAtMs,
     raw,
     reason,
     previewHex: raw.subarray(0, 32).toString('hex'),

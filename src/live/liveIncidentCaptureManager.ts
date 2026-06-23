@@ -12,6 +12,14 @@ const DEFAULT_GROUPING_DISTANCE_METERS = 15;
 
 type SnapshotSource = {
   getSnapshots: (carId: number, startMs: number, endMs: number) => LiveCarSnapshot[];
+  getTrackedCarIds?: () => number[];
+};
+
+type IncidentDebugLogger = (message: string, fields: Record<string, unknown>) => void;
+
+type FinalizeDebugContext = {
+  postLookupCounts: Record<number, number>;
+  totalSnapshotCount: number;
 };
 
 type PendingLiveIncident = {
@@ -38,7 +46,8 @@ export class LiveIncidentCaptureManager {
       incidentPostMs: number;
       groupingWindowMs?: number;
       groupingDistanceMeters?: number;
-      onFinalize?: (incident: FinalizedLiveIncidentPackage) => void;
+      onFinalize?: (incident: FinalizedLiveIncidentPackage, debug: FinalizeDebugContext) => void;
+      debugLogger?: IncidentDebugLogger;
     }
   ) {}
 
@@ -50,7 +59,17 @@ export class LiveIncidentCaptureManager {
       pending.lastReceivedAtMs = Math.max(pending.lastReceivedAtMs, event.receivedAtMs);
       pending.captureEndMs = Math.max(pending.captureEndMs, event.receivedAtMs + this.config.incidentPostMs);
       pending.events.push(event);
-      this.seedSnapshots(pending, getTrackedCarIds(event), pending.captureStartMs, event.receivedAtMs);
+      const preLookupCounts = this.seedSnapshots(pending, getTrackedCarIds(event), pending.captureStartMs, event.receivedAtMs);
+      this.config.debugLogger?.('Grouped live incident collision observed', {
+        incidentId: pending.incidentId,
+        incidentType: event.type,
+        carIds: getTrackedCarIds(event),
+        impact: event.impactSpeed,
+        ts: event.receivedAt,
+        availableRingBufferCarIds: this.snapshotSource.getTrackedCarIds?.() ?? [],
+        preLookupCounts,
+        pendingIncidentCreated: false,
+      });
       return;
     }
 
@@ -66,8 +85,18 @@ export class LiveIncidentCaptureManager {
       trackedCars: new Map<number, LiveCarSnapshot[]>(),
     };
 
-    this.seedSnapshots(incident, getTrackedCarIds(event), incident.captureStartMs, event.receivedAtMs);
+    const preLookupCounts = this.seedSnapshots(incident, getTrackedCarIds(event), incident.captureStartMs, event.receivedAtMs);
     this.pendingIncidents.push(incident);
+    this.config.debugLogger?.('Live incident collision observed', {
+      incidentId: incident.incidentId,
+      incidentType: event.type,
+      carIds: getTrackedCarIds(event),
+      impact: event.impactSpeed,
+      ts: event.receivedAt,
+      availableRingBufferCarIds: this.snapshotSource.getTrackedCarIds?.() ?? [],
+      preLookupCounts,
+      pendingIncidentCreated: true,
+    });
   }
 
   observeSnapshot(snapshot: LiveCarSnapshot): void {
@@ -96,6 +125,13 @@ export class LiveIncidentCaptureManager {
         continue;
       }
 
+      const postLookupCounts = this.seedSnapshots(
+        incident,
+        Array.from(incident.trackedCars.keys()),
+        incident.firstReceivedAtMs,
+        incident.captureEndMs
+      );
+
       const finalizedIncident = {
         incidentId: incident.incidentId,
         type: incident.type,
@@ -113,8 +149,26 @@ export class LiveIncidentCaptureManager {
           })),
       };
 
+      const totalSnapshotCount = finalizedIncident.cars.reduce((count, car) => count + car.snapshots.length, 0);
       this.finalizedIncidents.push(finalizedIncident);
-      this.config.onFinalize?.(cloneIncident(finalizedIncident));
+      this.config.debugLogger?.('Finalized live incident snapshot capture', {
+        incidentId: finalizedIncident.incidentId,
+        incidentType: finalizedIncident.type,
+        ts: new Date(finalizedIncident.lastReceivedAtMs).toISOString(),
+        postLookupCounts,
+        totalSnapshotCount,
+      });
+      if (totalSnapshotCount === 0) {
+        this.config.debugLogger?.('Live incident finalized without snapshots', {
+          incidentId: finalizedIncident.incidentId,
+          incidentType: finalizedIncident.type,
+          reason: 'No snapshots found inside capture window',
+        });
+      }
+      this.config.onFinalize?.(cloneIncident(finalizedIncident), {
+        postLookupCounts,
+        totalSnapshotCount,
+      });
     }
 
     this.pendingIncidents.length = 0;
@@ -163,16 +217,21 @@ export class LiveIncidentCaptureManager {
     carIds: number[],
     startMs: number,
     endMs: number
-  ): void {
+  ): Record<number, number> {
+    const lookupCounts: Record<number, number> = {};
+
     for (const carId of carIds) {
       const trackedSnapshots = incident.trackedCars.get(carId) ?? [];
       const seededSnapshots = this.snapshotSource.getSnapshots(carId, startMs, endMs);
+      lookupCounts[carId] = seededSnapshots.length;
       for (const snapshot of seededSnapshots) {
         appendUniqueSnapshot(trackedSnapshots, snapshot);
       }
 
       incident.trackedCars.set(carId, trackedSnapshots);
     }
+
+    return lookupCounts;
   }
 }
 

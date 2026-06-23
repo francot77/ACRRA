@@ -23,6 +23,10 @@ const MAX_SIMILAR_PACE_DELTA_KMH = 12;
 const MIN_REAR_END_CLOSING_SPEED_KMH = 15;
 
 export function analyzeIncidentVerdict(incident: PersistedLiveIncident): IncidentVerdict {
+  if (incident.snapshots.length === 0) {
+    return unknownVerdict('Missing pre-impact snapshots: no snapshot telemetry was captured for this incident');
+  }
+
   if (incident.type === 'collision_with_env') {
     return {
       type: 'environment_crash',

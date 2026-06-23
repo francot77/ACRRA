@@ -48,6 +48,18 @@ test('snapshot ring buffer keeps snapshots separated by carId', () => {
   );
 });
 
+test('snapshot ring buffer query uses requested live window instead of wall clock', () => {
+  const buffer = new SnapshotRingBuffer(10000, () => 50000);
+
+  buffer.insert(createSnapshot({ receivedAtMs: 1000 }));
+  buffer.insert(createSnapshot({ receivedAtMs: 2000 }));
+
+  assert.deepEqual(
+    buffer.query(7, 0, 3000).map((snapshot) => snapshot.receivedAtMs),
+    [1000, 2000]
+  );
+});
+
 function createSnapshot(overrides: Partial<LiveCarSnapshot> = {}): LiveCarSnapshot {
   return {
     receivedAtMs: 1000,

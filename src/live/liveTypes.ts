@@ -24,6 +24,7 @@ export type LiveCollisionPacketKind = 'collision_with_car' | 'collision_with_env
 type BaseLivePacket = {
   type: LivePacketKind;
   receivedAt: string;
+  receivedAtMs: number;
   raw: Buffer;
 };
 

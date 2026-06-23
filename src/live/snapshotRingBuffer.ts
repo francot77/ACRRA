@@ -16,10 +16,18 @@ export class SnapshotRingBuffer {
   }
 
   query(carId: number, startMs: number, endMs: number): LiveCarSnapshot[] {
-    this.purgeExpired();
+    const referenceMs = Number.isFinite(endMs)
+      ? Math.min(endMs, this.now())
+      : this.now();
+    this.purgeOlderThan(referenceMs - this.retentionMs);
 
     const snapshots = this.snapshotsByCarId.get(carId) ?? [];
     return snapshots.filter((snapshot) => snapshot.receivedAtMs >= startMs && snapshot.receivedAtMs <= endMs);
+  }
+
+  getTrackedCarIds(): number[] {
+    this.purgeExpired();
+    return Array.from(this.snapshotsByCarId.keys()).sort((left, right) => left - right);
   }
 
   purgeExpired(): void {

@@ -10,7 +10,7 @@ export class LiveSnapshotRecorder {
 
   recordCarUpdate(packet: LiveCarUpdatePacket): LiveCarSnapshot {
     const snapshot: LiveCarSnapshot = {
-      receivedAtMs: Date.parse(packet.receivedAt),
+      receivedAtMs: packet.receivedAtMs,
       carId: packet.carId,
       pos: packet.worldPosition,
       velocity: packet.velocity,
@@ -26,6 +26,10 @@ export class LiveSnapshotRecorder {
 
   getSnapshots(carId: number, startMs: number, endMs: number): LiveCarSnapshot[] {
     return this.ringBuffer.query(carId, startMs, endMs);
+  }
+
+  getTrackedCarIds(): number[] {
+    return this.ringBuffer.getTrackedCarIds();
   }
 }
 

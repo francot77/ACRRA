@@ -15,9 +15,13 @@ test('live snapshot recorder records snapshots with computed speed', () => {
 });
 
 function createCarUpdatePacket(overrides: Partial<LiveCarUpdatePacket> = {}): LiveCarUpdatePacket {
+  const receivedAt = overrides.receivedAt ?? new Date(0).toISOString();
+  const receivedAtMs = overrides.receivedAtMs ?? Date.parse(receivedAt);
+
   return {
     type: 'car_update',
-    receivedAt: new Date(0).toISOString(),
+    receivedAt,
+    receivedAtMs,
     raw: Buffer.alloc(0),
     carId: 7,
     worldPosition: { x: 1, y: 2, z: 3 },

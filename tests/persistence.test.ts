@@ -90,6 +90,7 @@ function createConfig(resultsDir: string, databasePath: string): AppConfig {
     snapshotRingBufferMs: 10000,
     incidentPreMs: 3000,
     incidentPostMs: 1500,
+    incidentDebug: false,
     incidentMatchMaxDistanceM: 30,
     incidentMatchMaxImpactDiffKmh: 35,
     processedFileStrategy: 'sqlite',
@@ -494,6 +495,78 @@ test('processor keeps the current safety/report pipeline when live incident matc
   assert.ok(unmatchedIncident);
   assert.equal(unmatchedIncident?.matched, false);
   assert.equal(unmatchedIncident?.raceId, null);
+});
+
+test('live incident snapshots persist relative to the representative collision timestamp', (t) => {
+  const context = createTempDb();
+  t.after(context.close);
+
+  const result = context.repositories.liveIncidents.persist({
+    incident: {
+      incidentId: 'relative-ms-check',
+      type: 'collision_with_car',
+      firstReceivedAtMs: Date.parse('2026-06-23T00:00:00.000Z'),
+      lastReceivedAtMs: Date.parse('2026-06-23T00:00:00.400Z'),
+      captureStartMs: Date.parse('2026-06-22T23:59:57.000Z'),
+      captureEndMs: Date.parse('2026-06-23T00:00:01.500Z'),
+      anchorPosition: { x: 10, y: 0, z: 20 },
+      events: [
+        {
+          type: 'collision_with_car',
+          receivedAt: '2026-06-23T00:00:00.000Z',
+          receivedAtMs: Date.parse('2026-06-23T00:00:00.000Z'),
+          carId: 7,
+          otherCarId: 8,
+          impactSpeed: 40,
+          worldPosition: { x: 10, y: 0, z: 20 },
+          relativePosition: { x: 0, y: 0, z: 0 }
+        },
+        {
+          type: 'collision_with_car',
+          receivedAt: '2026-06-23T00:00:00.400Z',
+          receivedAtMs: Date.parse('2026-06-23T00:00:00.400Z'),
+          carId: 7,
+          otherCarId: 8,
+          impactSpeed: 65,
+          worldPosition: { x: 12, y: 0, z: 21 },
+          relativePosition: { x: 0.1, y: 0, z: -0.2 }
+        }
+      ],
+      cars: [
+        {
+          carId: 7,
+          snapshots: [
+            {
+              receivedAtMs: Date.parse('2026-06-23T00:00:00.150Z'),
+              carId: 7,
+              pos: { x: 11, y: 0, z: 20.5 },
+              velocity: { x: 9, y: 0, z: 0 },
+              speedKmh: 32.4,
+              gear: 4,
+              engineRpm: 6000,
+              normalizedSplinePos: 0.4
+            },
+            {
+              receivedAtMs: Date.parse('2026-06-23T00:00:00.500Z'),
+              carId: 7,
+              pos: { x: 13, y: 0, z: 21.5 },
+              velocity: { x: 6, y: 0, z: 0 },
+              speedKmh: 21.6,
+              gear: 3,
+              engineRpm: 4500,
+              normalizedSplinePos: 0.401
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(result.status, 'inserted');
+  const incident = context.repositories.liveIncidents.list().find((entry) => entry.incidentUid === 'relative-ms-check');
+
+  assert.ok(incident);
+  assert.deepEqual(incident?.snapshots.map((snapshot) => snapshot.relativeMs), [-250, 100]);
 });
 
 test('processor stores matched live verdicts without changing safety', async (t) => {

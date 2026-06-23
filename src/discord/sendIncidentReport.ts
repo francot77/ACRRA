@@ -67,10 +67,11 @@ export function buildIncidentReportMessage(input: {
   const title = `📎 Reporte de incidente - ${input.race.trackName}`;
   const incidentType = input.liveIncident.type === 'collision_with_car' ? 'Auto vs auto' : 'Auto vs entorno';
   const involvedDrivers = formatInvolvedDrivers(input.race, input.jsonIncident, input.liveIncident);
-  const blamedDriver = resolveDriverName(input.race, input.liveIncident.verdictBlamedCarId);
-  const verdictLabel = formatVerdictLabel(input.liveIncident.verdictType);
-  const confidenceLabel = formatConfidenceLabel(input.liveIncident.verdictConfidence);
   const snapshotCounts = getSnapshotCounts(input.liveIncident);
+  const hasSnapshots = snapshotCounts.total > 0;
+  const blamedDriver = hasSnapshots ? resolveDriverName(input.race, input.liveIncident.verdictBlamedCarId) : null;
+  const verdictLabel = hasSnapshots ? formatVerdictLabel(input.liveIncident.verdictType) : 'no evaluada';
+  const confidenceLabel = hasSnapshots ? formatConfidenceLabel(input.liveIncident.verdictConfidence) : 'baja';
   const impactSummary = [
     `Impacto live: ${input.liveIncident.impactSpeed.toFixed(1)} km/h`,
     `Diferencia contra JSON: ${input.match.impactDiffKmh.toFixed(1)} km/h`,
@@ -84,9 +85,13 @@ export function buildIncidentReportMessage(input: {
   const assistantSummary = [
     `Veredicto sugerido: ${verdictLabel}`,
     `Confianza: ${confidenceLabel}`,
-    `Responsabilidad probable: ${blamedDriver ?? 'sin asignación clara'}`
+    `Responsabilidad probable: ${blamedDriver ?? (hasSnapshots ? 'sin asignación clara' : 'sin base suficiente')}`
   ].join('\n');
-  const explanation = formatExplanation(input.liveIncident.verdictExplanation);
+  const explanation = formatExplanation(
+    hasSnapshots
+      ? input.liveIncident.verdictExplanation
+      : ['Datos insuficientes: no se capturaron snapshots live antes o después del contacto', 'El incidente queda como no evaluado para evitar una conclusión fuerte sobre auto vs entorno o responsabilidad']
+  );
   const snapshotSummary = [
     `Snapshots previos: ${snapshotCounts.pre}`,
     `Snapshots posteriores: ${snapshotCounts.post}`,
@@ -182,7 +187,7 @@ function formatConfidenceLabel(confidence: number | null): string {
 
 function getSnapshotCounts(incident: PersistedLiveIncident): { pre: number; post: number; total: number } {
   const pre = incident.snapshots.filter((snapshot) => snapshot.relativeMs < 0).length;
-  const post = incident.snapshots.filter((snapshot) => snapshot.relativeMs >= 0).length;
+  const post = incident.snapshots.filter((snapshot) => snapshot.relativeMs > 0).length;
   return { pre, post, total: incident.snapshots.length };
 }
 

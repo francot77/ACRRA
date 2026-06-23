@@ -44,10 +44,17 @@ test('returns unknown when snapshots are missing', () => {
 });
 
 test('classifies environment collisions without involving safety logic', () => {
-  const verdict = analyzeIncidentVerdict(createIncident({ type: 'collision_with_env', otherCarId: null, snapshots: [] }));
+  const verdict = analyzeIncidentVerdict(createIncident({ type: 'collision_with_env', otherCarId: null, snapshots: [createSnapshot({ carId: 7, relativeMs: -50 })] }));
 
   assert.equal(verdict.type, 'environment_crash');
   assert.equal(verdict.blamedCarId, 7);
+});
+
+test('returns unknown when no snapshots exist even for environment contact', () => {
+  const verdict = analyzeIncidentVerdict(createIncident({ type: 'collision_with_env', otherCarId: null, snapshots: [] }));
+
+  assert.equal(verdict.type, 'unknown');
+  assert.match(verdict.explanation[0] ?? '', /no snapshot telemetry/i);
 });
 
 function createIncident(overrides: Partial<PersistedLiveIncident> = {}): PersistedLiveIncident {

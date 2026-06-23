@@ -81,9 +81,13 @@ test('repeated grouped collisions produce one finalized incident package', () =>
 });
 
 function createCarUpdatePacket(overrides: Partial<LiveCarUpdatePacket> = {}): LiveCarUpdatePacket {
+  const receivedAt = overrides.receivedAt ?? toIso(0);
+  const receivedAtMs = overrides.receivedAtMs ?? Date.parse(receivedAt);
+
   return {
     type: 'car_update',
-    receivedAt: toIso(0),
+    receivedAt,
+    receivedAtMs,
     raw: Buffer.alloc(0),
     carId: 7,
     worldPosition: { x: 1, y: 2, z: 3 },

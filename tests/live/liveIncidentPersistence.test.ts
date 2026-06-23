@@ -149,6 +149,7 @@ function createConfig(databasePath: string): AppConfig {
     snapshotRingBufferMs: 10000,
     incidentPreMs: 100,
     incidentPostMs: 20,
+    incidentDebug: false,
     incidentMatchMaxDistanceM: 30,
     incidentMatchMaxImpactDiffKmh: 35,
     processedFileStrategy: 'sqlite',
