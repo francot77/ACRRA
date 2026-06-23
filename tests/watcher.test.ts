@@ -13,11 +13,18 @@ function createConfig(resultsDir: string): AppConfig {
     resultsDir,
     databasePath: join(resultsDir, 'unused.sqlite'),
     discordWebhookUrl: '',
+    incidentsDiscordWebhookUrl: '',
+    incidentsWebhookEnabled: false,
     liveUdpEnabled: false,
     acUdpServerHost: '127.0.0.1',
     acUdpServerPluginPort: 9996,
     acUdpPluginListenPort: 9999,
     realtimeReportIntervalMs: 100,
+    snapshotRingBufferMs: 10000,
+    incidentPreMs: 3000,
+    incidentPostMs: 1500,
+    incidentMatchMaxDistanceM: 30,
+    incidentMatchMaxImpactDiffKmh: 35,
     processedFileStrategy: 'sqlite',
     scanOnStart: false,
     minFileAgeMs: 80,
@@ -45,6 +52,20 @@ function createRepositories(processedFiles: Set<string>): Repositories {
     races: {
       persist() {
         throw new Error('Not used in watcher integration tests');
+      }
+    },
+    liveIncidents: {
+      persist() {
+        throw new Error('Not used in watcher integration tests');
+      },
+      list() {
+        return [];
+      },
+      listPendingMatch() {
+        return [];
+      },
+      markMatched() {
+        return false;
       }
     }
   } as Repositories;

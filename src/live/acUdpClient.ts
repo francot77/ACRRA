@@ -1,7 +1,10 @@
 import dgram, { Socket } from 'node:dgram';
 import { AppConfig } from '../config';
+import type { Repositories } from '../db/repositories';
+import { LiveIncidentCaptureManager } from './liveIncidentCaptureManager';
+import { LiveSnapshotRecorder } from './liveSnapshotRecorder';
 import { LiveSmokeGate } from './smokeGate';
-import { AcLivePacket, LiveUdpRuntimeStatus } from './liveTypes';
+import { AcLivePacket, FinalizedLiveIncidentPackage, LiveCarSnapshot, LiveCollisionEvent, LiveUdpRuntimeStatus } from './liveTypes';
 import { buildAssumedRealtimeReportEnableCommand, parseAcUdpPacket } from './udpProtocolParser';
 
 type LogLevel = 'info' | 'warn' | 'error';
@@ -11,6 +14,8 @@ export type LiveLogger = (level: LogLevel, component: string, message: string, f
 export type AcUdpClient = {
   close: () => Promise<void>;
   getStatus: () => LiveUdpRuntimeStatus;
+  getSnapshots: (carId: number, startMs: number, endMs: number) => LiveCarSnapshot[];
+  getFinalizedIncidents: () => FinalizedLiveIncidentPackage[];
 };
 
 export async function startAcUdpClient(
@@ -19,11 +24,36 @@ export async function startAcUdpClient(
     socketFactory?: () => Socket;
     logger?: LiveLogger;
     smokeGate?: LiveSmokeGate;
+    snapshotRecorder?: LiveSnapshotRecorder;
+    liveIncidentRepository?: Repositories['liveIncidents'];
   }
 ): Promise<AcUdpClient> {
   const socket = dependencies?.socketFactory?.() ?? dgram.createSocket('udp4');
   const logger = dependencies?.logger ?? defaultLogger;
   const smokeGate = dependencies?.smokeGate ?? new LiveSmokeGate();
+  const snapshotRecorder = dependencies?.snapshotRecorder ?? new LiveSnapshotRecorder(config.snapshotRingBufferMs);
+  const liveIncidentRepository = dependencies?.liveIncidentRepository;
+  const incidentCaptureManager = new LiveIncidentCaptureManager(snapshotRecorder, {
+    incidentPreMs: config.incidentPreMs,
+    incidentPostMs: config.incidentPostMs,
+    onFinalize: (incident) => {
+      if (!liveIncidentRepository) {
+        return;
+      }
+
+      const result = liveIncidentRepository.persist({ incident });
+      logger('info', 'live-udp', result.status === 'inserted' ? 'Persisted finalized live incident' : 'Skipped duplicate finalized live incident', {
+        incidentUid: incident.incidentId,
+        incidentType: incident.type,
+        trackedCars: incident.cars.map((car) => car.carId),
+        eventCount: incident.events.length,
+        snapshotCount: result.status === 'inserted'
+          ? result.snapshotCount
+          : incident.cars.reduce((count, car) => count + car.snapshots.length, 0),
+        persistenceStatus: result.status,
+      });
+    }
+  });
 
   socket.on('message', (rawMessage, remote) => {
     const packet = parseAcUdpPacket(rawMessage);
@@ -41,6 +71,13 @@ export async function startAcUdpClient(
 
     const stateBefore = smokeGate.getState();
     const stateAfter = smokeGate.observe(packet.type, new Date(packet.receivedAt));
+
+    if (packet.type === 'car_update') {
+      const snapshot = snapshotRecorder.recordCarUpdate(packet);
+      incidentCaptureManager.observeSnapshot(snapshot);
+    } else {
+      incidentCaptureManager.observeCollision(toCollisionEvent(packet));
+    }
 
     logger('info', 'live-udp', 'Received live UDP packet', {
       remoteAddress: remote.address,
@@ -94,7 +131,13 @@ export async function startAcUdpClient(
 
   return {
     close: () => closeSocket(socket),
-    getStatus: () => ({ smokeGate: smokeGate.getState() })
+    getStatus: () => ({
+      smokeGate: smokeGate.getState(),
+      finalizedIncidentCount: incidentCaptureManager.getFinalizedIncidentCount(),
+      pendingIncidentCount: incidentCaptureManager.getPendingIncidentCount(),
+    }),
+    getSnapshots: (carId, startMs, endMs) => snapshotRecorder.getSnapshots(carId, startMs, endMs),
+    getFinalizedIncidents: () => incidentCaptureManager.getFinalizedIncidents()
   };
 }
 
@@ -167,4 +210,31 @@ function buildPacketLogFields(packet: Exclude<AcLivePacket, { type: 'unknown' }>
 
 function roundMetric(value: number, digits = 2): number {
   return Number(value.toFixed(digits));
+}
+
+function toCollisionEvent(packet: Exclude<AcLivePacket, { type: 'car_update' | 'unknown' }>): LiveCollisionEvent {
+  const receivedAtMs = Date.parse(packet.receivedAt);
+
+  if (packet.type === 'collision_with_car') {
+    return {
+      type: packet.type,
+      receivedAt: packet.receivedAt,
+      receivedAtMs,
+      carId: packet.carId,
+      otherCarId: packet.otherCarId,
+      impactSpeed: packet.impactSpeed,
+      worldPosition: packet.worldPosition,
+      relativePosition: packet.relativePosition,
+    };
+  }
+
+  return {
+    type: packet.type,
+    receivedAt: packet.receivedAt,
+    receivedAtMs,
+    carId: packet.carId,
+    impactSpeed: packet.impactSpeed,
+    worldPosition: packet.worldPosition,
+    relativePosition: packet.relativePosition,
+  };
 }

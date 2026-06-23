@@ -129,3 +129,11 @@
 - `src/live/acUdpClient.ts` smoke logs now expose protocol-aligned semantics (`car_update`, `collision_with_car`, `collision_with_env`) with useful numeric fields like `carId`, `otherCarId`, `impact`, `spline`, `gear`, and `engineRpm`.
 - Added focused regression coverage for binary live packet parsing, smoke-gate completion after all three packet kinds, and realtime-enable command/log behavior.
 - Batch `RACE.json` ingestion, persistence, matching, snapshots, verdicts, and later phases were intentionally left untouched.
+
+## Live Incident Verdict Slice
+
+- Added deterministic assistant-only verdict heuristics in `src/incidents/analyzeIncidentVerdict.ts` with the requested verdict shape, conservative scope, and short explanation bullets.
+- Current coverage is intentionally narrow and explainable: `environment_crash`, `possible_rear_end`, `racing_incident`, and `unknown`; weak divebomb/squeeze/unsafe-rejoin evidence still falls back to `unknown`.
+- `live_incidents` now persists `verdict_type`, `verdict_confidence`, `verdict_blamed_car_id`, and `verdict_explanation_json`, with bootstrap-time column backfill for existing SQLite files.
+- Matched live incidents are analyzed during the existing match step in `src/index.ts`; the normal `RACE.json` analyzer and safety pipeline remain unchanged and authoritative.
+- Added unit coverage for rear-end, racing incident, unknown-on-missing-snapshots, and environment crash verdicts, plus an integration regression proving verdict persistence does not alter persisted safety values.

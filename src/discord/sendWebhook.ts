@@ -1,8 +1,41 @@
 import { RaceMessage } from './buildRaceMessage';
 
 export async function sendWebhook(webhookUrl: string, message: RaceMessage): Promise<'sent' | 'logged' | 'failed'> {
+  return postDiscordWebhook(webhookUrl, message, {
+    disabledLogMessage: 'Discord webhook disabled, logging race summary instead',
+    successLogMessage: 'Sent Discord race summary'
+  });
+}
+
+export type DiscordWebhookMessage = {
+  title: string;
+  summaryText: string;
+  webhookBody: {
+    content: string;
+    embeds: Array<{
+      title: string;
+      description: string;
+      color: number;
+      fields: Array<{
+        name: string;
+        value: string;
+        inline?: boolean;
+      }>;
+      footer: { text: string };
+    }>;
+  };
+};
+
+export async function postDiscordWebhook(
+  webhookUrl: string,
+  message: DiscordWebhookMessage,
+  options: {
+    disabledLogMessage: string;
+    successLogMessage: string;
+  }
+): Promise<'sent' | 'logged' | 'failed'> {
   if (!webhookUrl.trim()) {
-    log('info', 'discord', 'Discord webhook disabled, logging race summary instead', { summary: message.summaryText });
+    log('info', 'discord', options.disabledLogMessage, { summary: message.summaryText });
     return 'logged';
   }
 
@@ -25,7 +58,7 @@ export async function sendWebhook(webhookUrl: string, message: RaceMessage): Pro
       return 'failed';
     }
 
-    log('info', 'discord', 'Sent Discord race summary', { title: message.title });
+    log('info', 'discord', options.successLogMessage, { title: message.title });
     return 'sent';
   } catch (error) {
     log('error', 'discord', 'Discord webhook request failed', {

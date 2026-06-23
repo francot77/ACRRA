@@ -3,10 +3,13 @@ import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { AppConfig, loadConfig } from './config';
 import { buildRaceMessage } from './discord/buildRaceMessage';
+import { sendIncidentReports } from './discord/sendIncidentReport';
 import { sendWebhook } from './discord/sendWebhook';
 import { openDatabase } from './db/db';
 import { createRepositories, Repositories } from './db/repositories';
+import { analyzeIncidentVerdict } from './incidents/analyzeIncidentVerdict';
 import { startAcUdpClient } from './live/acUdpClient';
+import { extractRaceCollisionEvents, matchLiveIncidentsToRaceEvents } from './live/matchLiveIncidents';
 import { applySafetyRatings } from './parser/calculateSafety';
 import { calculateDriverStats } from './parser/calculateDriverStats';
 import { groupIncidents } from './parser/groupIncidents';
@@ -75,6 +78,65 @@ export function createRaceProcessor(config: AppConfig, repositories: Repositorie
       skippedTempDrivers: ratedDriverStats.filter((entry) => !entry.guid).length
     });
 
+    let incidentsForReporting: Array<{
+      liveIncident: (ReturnType<typeof repositories.liveIncidents.listPendingMatch>)[number];
+      jsonIncident: ReturnType<typeof extractRaceCollisionEvents>[number];
+      match: ReturnType<typeof matchLiveIncidentsToRaceEvents>['matched'][number];
+    }> = [];
+
+    try {
+      const pendingLiveIncidents = repositories.liveIncidents.listPendingMatch();
+      const jsonIncidents = extractRaceCollisionEvents(race);
+      const matchResult = matchLiveIncidentsToRaceEvents(pendingLiveIncidents, jsonIncidents, {
+        maxDistanceM: config.incidentMatchMaxDistanceM,
+        maxImpactDiffKmh: config.incidentMatchMaxImpactDiffKmh,
+      });
+
+      for (const match of matchResult.matched) {
+        const liveIncident = pendingLiveIncidents.find((incident) => incident.id === match.liveIncidentId);
+        const jsonIncident = jsonIncidents.find((incident) => incident.eventIndex === match.jsonEventIndex);
+        const verdict = liveIncident ? analyzeIncidentVerdict(liveIncident) : undefined;
+        const matchedAt = new Date().toISOString();
+        repositories.liveIncidents.markMatched(
+          match.liveIncidentId,
+          persistence.raceId,
+          matchedAt,
+          verdict
+        );
+
+        if (liveIncident && jsonIncident) {
+          incidentsForReporting.push({
+            liveIncident: {
+              ...liveIncident,
+              raceId: persistence.raceId,
+              matched: true,
+              matchedAt,
+              verdictType: verdict?.type ?? null,
+              verdictConfidence: verdict?.confidence ?? null,
+              verdictBlamedCarId: verdict?.blamedCarId ?? null,
+              verdictExplanation: verdict?.explanation ?? []
+            },
+            jsonIncident,
+            match
+          });
+        }
+      }
+
+      log('info', 'processor', 'Matched persisted live incidents against race JSON', {
+        fileName,
+        raceId: persistence.raceId,
+        matched: matchResult.matched.length,
+        liveOnly: matchResult.liveOnly.length,
+        jsonOnly: matchResult.jsonOnly.length,
+        unmatched: matchResult.unmatched.length,
+      });
+    } catch (error) {
+      log('warn', 'processor', 'Live incident matching skipped after race persistence error', {
+        fileName,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+
     const raceMessage = buildRaceMessage({
       fileName,
       race,
@@ -84,6 +146,13 @@ export function createRaceProcessor(config: AppConfig, repositories: Repositorie
       nuclearMissileMinCarImpactKmh: config.nuclearMissileMinCarImpactKmh
     });
     await sendWebhook(config.discordWebhookUrl, raceMessage);
+    await sendIncidentReports({
+      enabled: config.incidentsWebhookEnabled,
+      webhookUrl: config.incidentsDiscordWebhookUrl,
+      fileName,
+      race,
+      incidents: incidentsForReporting
+    });
 
     return 'processed';
   };
@@ -94,7 +163,9 @@ export async function main(): Promise<void> {
   const database = openDatabase(config.databasePath);
   const repositories = createRepositories(database);
   const processRaceFile = createRaceProcessor(config, repositories);
-  const liveUdpClient = config.liveUdpEnabled ? await startAcUdpClient(config, { logger: log }) : null;
+  const liveUdpClient = config.liveUdpEnabled
+    ? await startAcUdpClient(config, { logger: log, liveIncidentRepository: repositories.liveIncidents })
+    : null;
   const watcher = await watchRaceResults({ config, repositories, processFile: processRaceFile });
 
   log('info', 'bootstrap', 'AC race monitor started', {

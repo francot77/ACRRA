@@ -27,6 +27,11 @@ test('acUdpClient uses the real realtime enable packet and logs real packet sema
   const packetLogs = logs.filter((entry) => entry.message === 'Received live UDP packet');
   assert.equal(packetLogs.length, 3);
 
+  const recordedSnapshots = client.getSnapshots(7, 0, Number.MAX_SAFE_INTEGER);
+  assert.equal(recordedSnapshots.length, 1);
+  assert.equal(recordedSnapshots[0]?.speedKmh, 36);
+  assert.deepEqual(client.getFinalizedIncidents(), []);
+
   assert.deepEqual(packetLogs[0]?.fields, {
     remoteAddress: '127.0.0.1',
     remotePort: 11000,
@@ -105,11 +110,18 @@ function createConfig(): AppConfig {
     resultsDir: '/app/results',
     databasePath: '/app/data/ac-race-monitor.sqlite',
     discordWebhookUrl: '',
+    incidentsDiscordWebhookUrl: '',
+    incidentsWebhookEnabled: false,
     liveUdpEnabled: true,
     acUdpServerHost: '127.0.0.1',
     acUdpServerPluginPort: 11000,
     acUdpPluginListenPort: 12000,
     realtimeReportIntervalMs: 250,
+    snapshotRingBufferMs: 10000,
+    incidentPreMs: 3000,
+    incidentPostMs: 1500,
+    incidentMatchMaxDistanceM: 30,
+    incidentMatchMaxImpactDiffKmh: 35,
     processedFileStrategy: 'sqlite',
     scanOnStart: true,
     minFileAgeMs: 3000,

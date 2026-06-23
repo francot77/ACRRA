@@ -7,6 +7,7 @@ import { createRaceProcessor } from '../src/index';
 import { openDatabase } from '../src/db/db';
 import { createRepositories } from '../src/db/repositories';
 import { AppConfig } from '../src/config';
+import { IncidentVerdictType } from '../src/incidents/analyzeIncidentVerdict';
 import { applySafetyRatings } from '../src/parser/calculateSafety';
 import { calculateDriverStats } from '../src/parser/calculateDriverStats';
 import { groupIncidents } from '../src/parser/groupIncidents';
@@ -79,11 +80,18 @@ function createConfig(resultsDir: string, databasePath: string): AppConfig {
     resultsDir,
     databasePath,
     discordWebhookUrl: '',
+    incidentsDiscordWebhookUrl: '',
+    incidentsWebhookEnabled: false,
     liveUdpEnabled: false,
     acUdpServerHost: '127.0.0.1',
     acUdpServerPluginPort: 9996,
     acUdpPluginListenPort: 9999,
     realtimeReportIntervalMs: 100,
+    snapshotRingBufferMs: 10000,
+    incidentPreMs: 3000,
+    incidentPostMs: 1500,
+    incidentMatchMaxDistanceM: 30,
+    incidentMatchMaxImpactDiffKmh: 35,
     processedFileStrategy: 'sqlite',
     scanOnStart: true,
     minFileAgeMs: 50,
@@ -426,4 +434,183 @@ test('sqlite does not persist changed safety when race is below the minimum acti
   assert.equal(persistedDriver.races, 6);
   assert.equal(persistedResult.old_safety, 84);
   assert.equal(persistedResult.new_safety, 84);
+});
+
+test('processor keeps the current safety/report pipeline when live incident matching misses', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'motassettorr-match-miss-'));
+  const resultsDir = join(directory, 'results');
+  const databasePath = join(directory, 'ac-race-monitor.sqlite');
+  const sampleFileName = '2026_6_20_4_0_RACE.json';
+  const samplePath = join(resultsDir, sampleFileName);
+  const originalInfo = console.info;
+
+  mkdirSync(resultsDir, { recursive: true });
+  copyFileSync(resolve(process.cwd(), 'samples/results', sampleFileName), samplePath);
+
+  const database = openDatabase(databasePath);
+  const repositories = createRepositories(database);
+  const config = createConfig(resultsDir, databasePath);
+  const processRaceFile = createRaceProcessor(config, repositories);
+
+  repositories.liveIncidents.persist({
+    incident: {
+      incidentId: 'missed-live-incident',
+      type: 'collision_with_car',
+      firstReceivedAtMs: Date.parse('2026-06-23T00:00:00.000Z'),
+      lastReceivedAtMs: Date.parse('2026-06-23T00:00:01.000Z'),
+      captureStartMs: -3000,
+      captureEndMs: 1500,
+      anchorPosition: { x: 9999, y: 0, z: 9999 },
+      events: [
+        {
+          type: 'collision_with_car',
+          receivedAt: '2026-06-23T00:00:00.000Z',
+          receivedAtMs: Date.parse('2026-06-23T00:00:00.000Z'),
+          carId: 99,
+          otherCarId: 100,
+          impactSpeed: 12,
+          worldPosition: { x: 9999, y: 0, z: 9999 },
+          relativePosition: { x: 0, y: 0, z: 0 },
+        }
+      ],
+      cars: []
+    }
+  });
+
+  console.info = () => {};
+  t.after(() => {
+    console.info = originalInfo;
+    database.close();
+  });
+
+  const result = await processRaceFile(samplePath);
+  const raceCount = (database.prepare('SELECT COUNT(*) AS count FROM races').get() as { count: number }).count;
+  const resultCount = (database.prepare('SELECT COUNT(*) AS count FROM race_driver_results').get() as { count: number }).count;
+  const unmatchedIncident = repositories.liveIncidents.list().find((incident) => incident.incidentUid === 'missed-live-incident');
+
+  assert.equal(result, 'processed');
+  assert.equal(raceCount, 1);
+  assert.ok(resultCount > 0);
+  assert.ok(unmatchedIncident);
+  assert.equal(unmatchedIncident?.matched, false);
+  assert.equal(unmatchedIncident?.raceId, null);
+});
+
+test('processor stores matched live verdicts without changing safety', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'motassettorr-live-verdict-'));
+  const resultsDir = join(directory, 'results');
+  const databasePath = join(directory, 'ac-race-monitor.sqlite');
+  const sampleFileName = '2026_6_20_4_0_RACE.json';
+  const samplePath = join(resultsDir, sampleFileName);
+  const originalInfo = console.info;
+
+  mkdirSync(resultsDir, { recursive: true });
+  copyFileSync(resolve(process.cwd(), 'samples/results', sampleFileName), samplePath);
+
+  const database = openDatabase(databasePath);
+  const repositories = createRepositories(database);
+  const config = createConfig(resultsDir, databasePath);
+  const processRaceFile = createRaceProcessor(config, repositories);
+
+  const seeded = repositories.liveIncidents.persist({
+      incident: {
+        incidentId: 'matched-live-incident',
+        type: 'collision_with_env',
+        firstReceivedAtMs: Date.parse('2026-06-20T04:00:00.000Z'),
+        lastReceivedAtMs: Date.parse('2026-06-20T04:00:00.200Z'),
+        captureStartMs: -3000,
+        captureEndMs: 1500,
+        anchorPosition: { x: 950.4512, y: -2.8892956, z: -908.71387 },
+        events: [
+          {
+            type: 'collision_with_env',
+            receivedAt: '2026-06-20T04:00:00.000Z',
+            receivedAtMs: Date.parse('2026-06-20T04:00:00.000Z'),
+            carId: 1,
+            impactSpeed: 46.5,
+            worldPosition: { x: 950.4512, y: -2.8892956, z: -908.71387 },
+            relativePosition: { x: 0.4, y: 0, z: -0.2 },
+          }
+        ],
+        cars: [
+          {
+            carId: 1,
+            snapshots: [
+              {
+                receivedAtMs: Date.parse('2026-06-20T03:59:59.900Z'),
+                carId: 1,
+                pos: { x: 949.8, y: -2.9, z: -909 },
+                velocity: { x: 10, y: 0, z: 0 },
+                speedKmh: 102,
+                gear: 4,
+              engineRpm: 6000,
+              normalizedSplinePos: 0.25,
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(seeded.status, 'inserted');
+
+  const before = database.prepare('SELECT guid, old_safety, new_safety FROM race_driver_results ORDER BY id ASC').all() as Array<{
+    guid: string;
+    old_safety: number;
+    new_safety: number;
+  }>;
+
+  console.info = () => {};
+  t.after(() => {
+    console.info = originalInfo;
+    database.close();
+  });
+
+  const result = await processRaceFile(samplePath);
+  assert.equal(result, 'processed');
+
+  const matchedIncident = repositories.liveIncidents.list().find((incident) => incident.incidentUid === 'matched-live-incident');
+  const verdictRow = database.prepare(
+    'SELECT verdict_type, verdict_confidence, verdict_blamed_car_id FROM live_incidents WHERE incident_uid = ?'
+  ).get('matched-live-incident') as {
+    verdict_type: IncidentVerdictType | null;
+    verdict_confidence: number | null;
+    verdict_blamed_car_id: number | null;
+  };
+  const after = database.prepare('SELECT guid, old_safety, new_safety FROM race_driver_results ORDER BY id ASC').all() as Array<{
+    guid: string;
+    old_safety: number;
+    new_safety: number;
+  }>;
+
+  assert.ok(matchedIncident);
+  assert.equal(matchedIncident?.matched, true);
+  assert.equal(matchedIncident?.verdictType, 'environment_crash');
+  assert.equal(verdictRow.verdict_type, 'environment_crash');
+  assert.equal(verdictRow.verdict_blamed_car_id, 1);
+  assert.ok((verdictRow.verdict_confidence ?? 0) > 0.9);
+  assert.notDeepEqual(after, before);
+
+  const recomputedRace = parseRaceJson(readFileSync(samplePath, 'utf8'), sampleFileName);
+  const recomputedGrouped = groupIncidents(recomputedRace.events.filter((event) => event.type === 'COLLISION_WITH_CAR'));
+  const recomputedStats = applySafetyRatings(
+    calculateDriverStats(recomputedRace, recomputedGrouped, config.defaultSafetyRating),
+    repositories.drivers.getSafetyRatings([]),
+    {
+      defaultSafetyRating: config.defaultSafetyRating,
+      safetyMemoryFactor: config.safetyMemoryFactor,
+      minActiveDriversForSafety: config.minActiveDriversForSafetyGain,
+    }
+  );
+  const persistedSafetyRows = database.prepare(
+    'SELECT guid, old_safety, new_safety FROM race_driver_results ORDER BY id ASC'
+  ).all() as Array<{ guid: string; old_safety: number; new_safety: number }>;
+
+  assert.equal(persistedSafetyRows.length, recomputedStats.filter((entry) => entry.guid && entry.active).length);
+  for (const entry of recomputedStats.filter((stat) => stat.guid && stat.active)) {
+    const persisted = persistedSafetyRows.find((row) => row.guid === entry.guid);
+    assert.ok(persisted);
+    assert.equal(persisted?.old_safety, entry.oldSafetyRating);
+    assert.equal(persisted?.new_safety, entry.newSafetyRating);
+  }
 });

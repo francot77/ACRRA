@@ -4,11 +4,18 @@ const envSchema = z.object({
   RESULTS_DIR: z.string().default('/app/results'),
   DATABASE_PATH: z.string().default('/app/data/ac-race-monitor.sqlite'),
   DISCORD_WEBHOOK_URL: z.string().default(''),
+  INCIDENTS_DISCORD_WEBHOOK_URL: z.string().default(''),
+  INCIDENTS_WEBHOOK_ENABLED: z.enum(['true', 'false']).default('false'),
   LIVE_UDP_ENABLED: z.enum(['true', 'false']).default('false'),
   AC_UDP_SERVER_HOST: z.string().default('127.0.0.1'),
   AC_UDP_SERVER_PLUGIN_PORT: z.coerce.number().int().positive().default(11000),
   AC_UDP_PLUGIN_LISTEN_PORT: z.coerce.number().int().positive().default(12000),
   REALTIME_REPORT_INTERVAL_MS: z.coerce.number().int().positive().default(250),
+  SNAPSHOT_RING_BUFFER_MS: z.coerce.number().int().positive().default(10000),
+  INCIDENT_PRE_MS: z.coerce.number().int().nonnegative().default(3000),
+  INCIDENT_POST_MS: z.coerce.number().int().nonnegative().default(1500),
+  INCIDENT_MATCH_MAX_DISTANCE_M: z.coerce.number().positive().default(30),
+  INCIDENT_MATCH_MAX_IMPACT_DIFF_KMH: z.coerce.number().nonnegative().default(35),
   PROCESSED_FILE_STRATEGY: z.literal('sqlite').default('sqlite'),
   SCAN_ON_START: z.enum(['true', 'false']).default('true'),
   MIN_FILE_AGE_MS: z.coerce.number().int().nonnegative().default(3000),
@@ -24,11 +31,18 @@ export type AppConfig = {
   resultsDir: string;
   databasePath: string;
   discordWebhookUrl: string;
+  incidentsDiscordWebhookUrl: string;
+  incidentsWebhookEnabled: boolean;
   liveUdpEnabled: boolean;
   acUdpServerHost: string;
   acUdpServerPluginPort: number;
   acUdpPluginListenPort: number;
   realtimeReportIntervalMs: number;
+  snapshotRingBufferMs: number;
+  incidentPreMs: number;
+  incidentPostMs: number;
+  incidentMatchMaxDistanceM: number;
+  incidentMatchMaxImpactDiffKmh: number;
   processedFileStrategy: 'sqlite';
   scanOnStart: boolean;
   minFileAgeMs: number;
@@ -47,11 +61,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     resultsDir: parsed.RESULTS_DIR,
     databasePath: parsed.DATABASE_PATH,
     discordWebhookUrl: parsed.DISCORD_WEBHOOK_URL,
+    incidentsDiscordWebhookUrl: parsed.INCIDENTS_DISCORD_WEBHOOK_URL,
+    incidentsWebhookEnabled: parsed.INCIDENTS_WEBHOOK_ENABLED === 'true',
     liveUdpEnabled: parsed.LIVE_UDP_ENABLED === 'true',
     acUdpServerHost: parsed.AC_UDP_SERVER_HOST,
     acUdpServerPluginPort: parsed.AC_UDP_SERVER_PLUGIN_PORT,
     acUdpPluginListenPort: parsed.AC_UDP_PLUGIN_LISTEN_PORT,
     realtimeReportIntervalMs: parsed.REALTIME_REPORT_INTERVAL_MS,
+    snapshotRingBufferMs: parsed.SNAPSHOT_RING_BUFFER_MS,
+    incidentPreMs: parsed.INCIDENT_PRE_MS,
+    incidentPostMs: parsed.INCIDENT_POST_MS,
+    incidentMatchMaxDistanceM: parsed.INCIDENT_MATCH_MAX_DISTANCE_M,
+    incidentMatchMaxImpactDiffKmh: parsed.INCIDENT_MATCH_MAX_IMPACT_DIFF_KMH,
     processedFileStrategy: parsed.PROCESSED_FILE_STRATEGY,
     scanOnStart: parsed.SCAN_ON_START === 'true',
     minFileAgeMs: parsed.MIN_FILE_AGE_MS,
