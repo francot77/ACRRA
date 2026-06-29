@@ -177,6 +177,86 @@ test('acUdpClient wires optional track runtime into snapshot and incident enrich
   await client.close();
 });
 
+test('acUdpClient re-sends the realtime report enable command when car_update packets disappear but other UDP traffic continues', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'] });
+  t.mock.timers.setTime(0);
+
+  const socket = new FakeSocket();
+  const logs: Array<{ level: string; component: string; message: string; fields: Record<string, unknown> }> = [];
+  const logger: LiveLogger = (level, component, message, fields) => {
+    logs.push({ level, component, message, fields });
+  };
+
+  const client = await startAcUdpClient(createConfig({ liveUdpDebug: false }), {
+    socketFactory: () => socket as unknown as Socket,
+    logger,
+  });
+
+  socket.emitMessage(createCarUpdatePacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 33 });
+
+  t.mock.timers.tick(5000);
+  socket.emitMessage(createCollisionWithEnvPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 31 });
+
+  assert.equal(socket.sentPackets.length, 2);
+  assert.equal(socket.sentPackets[1]?.payload.toString('hex'), 'c8fa00');
+
+  const attemptLog = logs.find((entry) => entry.message === 'Live UDP stream missing car_update packets while other traffic continues; re-sending realtime report enable command');
+  assert.ok(attemptLog);
+  assert.deepEqual(attemptLog?.fields, {
+    windowPacketCount: 1,
+    windowCarUpdateCount: 0,
+    summaryIntervalMs: 5000,
+    cooldownMs: 15000,
+    intervalMs: 250,
+    targetHost: '127.0.0.1',
+    targetPort: 11000,
+  });
+
+  const resendLog = logs.find((entry) => entry.message === 'Re-sent realtime report enable command');
+  assert.ok(resendLog);
+
+  await client.close();
+});
+
+test('acUdpClient does not spam realtime report re-enable attempts across consecutive dead-stream windows', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'] });
+  t.mock.timers.setTime(0);
+
+  const socket = new FakeSocket();
+  const logs: Array<{ level: string; component: string; message: string; fields: Record<string, unknown> }> = [];
+  const logger: LiveLogger = (level, component, message, fields) => {
+    logs.push({ level, component, message, fields });
+  };
+
+  const client = await startAcUdpClient(createConfig({ liveUdpDebug: false }), {
+    socketFactory: () => socket as unknown as Socket,
+    logger,
+  });
+
+  socket.emitMessage(createCarUpdatePacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 33 });
+
+  t.mock.timers.tick(5000);
+  socket.emitMessage(createCollisionWithCarPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 32 });
+
+  t.mock.timers.tick(5000);
+  socket.emitMessage(createCollisionWithEnvPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 31 });
+
+  t.mock.timers.tick(5000);
+  socket.emitMessage(createUnknownPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 4 });
+
+  assert.equal(socket.sentPackets.length, 2);
+  assert.equal(logs.filter((entry) => entry.message === 'Re-sent realtime report enable command').length, 1);
+  assert.equal(logs.filter((entry) => entry.message === 'Live UDP stream missing car_update packets while other traffic continues; re-sending realtime report enable command').length, 1);
+
+  t.mock.timers.tick(30000);
+  socket.emitMessage(createCollisionWithEnvPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 31 });
+
+  assert.equal(socket.sentPackets.length, 3);
+  assert.equal(logs.filter((entry) => entry.message === 'Re-sent realtime report enable command').length, 2);
+
+  await client.close();
+});
+
 class FakeSocket extends EventEmitter {
   readonly sentPackets: Array<{ payload: Buffer; port: number; host: string }> = [];
 

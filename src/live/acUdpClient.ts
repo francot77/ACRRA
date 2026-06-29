@@ -46,6 +46,7 @@ export async function startAcUdpClient(
       }
     : undefined;
   const incidentDebug = createIncidentDebugLogger(config, logger, snapshotRecorder);
+  const realtimeReportKeepAlive = createRealtimeReportKeepAlive(config, logger, socket);
   const incidentCaptureManager = new LiveIncidentCaptureManager(snapshotRecorder, {
     incidentPreMs: config.incidentPreMs,
     incidentPostMs: config.incidentPostMs,
@@ -100,6 +101,7 @@ export async function startAcUdpClient(
   socket.on('message', (rawMessage, remote) => {
     const packet = parseAcUdpPacket(rawMessage);
     incidentDebug.observePacket(packet.type);
+    realtimeReportKeepAlive.observePacket(packet.type, packet.receivedAtMs);
 
     if (packet.type === 'unknown') {
       logger('warn', 'live-udp', 'Received unknown live UDP packet', {
@@ -154,6 +156,26 @@ export async function startAcUdpClient(
     captureEnabled: false
   });
 
+  sendRealtimeReportEnableCommand(socket, config, logger, 'Sent realtime report enable command');
+
+  return {
+    close: () => closeSocket(socket),
+    getStatus: () => ({
+      smokeGate: smokeGate.getState(),
+      finalizedIncidentCount: incidentCaptureManager.getFinalizedIncidentCount(),
+      pendingIncidentCount: incidentCaptureManager.getPendingIncidentCount(),
+    }),
+    getSnapshots: (carId, startMs, endMs) => snapshotRecorder.getSnapshots(carId, startMs, endMs),
+    getFinalizedIncidents: () => incidentCaptureManager.getFinalizedIncidents()
+  };
+}
+
+function sendRealtimeReportEnableCommand(
+  socket: Socket,
+  config: AppConfig,
+  logger: LiveLogger,
+  successMessage: string
+): void {
   const command = buildAssumedRealtimeReportEnableCommand(config.realtimeReportIntervalMs);
   socket.send(command, config.acUdpServerPluginPort, config.acUdpServerHost, (error) => {
     if (error) {
@@ -166,7 +188,7 @@ export async function startAcUdpClient(
       return;
     }
 
-    logger('info', 'live-udp', 'Sent realtime report enable command', {
+    logger('info', 'live-udp', successMessage, {
       protocol: 'ac-server-plugin-realtime-report-enable',
       packetId: 200,
       intervalEncoding: 'uint16le',
@@ -176,17 +198,6 @@ export async function startAcUdpClient(
       payloadHex: command.toString('hex')
     });
   });
-
-  return {
-    close: () => closeSocket(socket),
-    getStatus: () => ({
-      smokeGate: smokeGate.getState(),
-      finalizedIncidentCount: incidentCaptureManager.getFinalizedIncidentCount(),
-      pendingIncidentCount: incidentCaptureManager.getPendingIncidentCount(),
-    }),
-    getSnapshots: (carId, startMs, endMs) => snapshotRecorder.getSnapshots(carId, startMs, endMs),
-    getFinalizedIncidents: () => incidentCaptureManager.getFinalizedIncidents()
-  };
 }
 
 async function bindSocket(socket: Socket, listenPort: number): Promise<void> {
@@ -291,6 +302,69 @@ type IncidentDebugLoggerFn = ((message: string, fields: Record<string, unknown>)
   observePacket: (packetType: AcLivePacket['type']) => void;
   maybeLogSummary: (nowMs: number, incidentCaptureManager: LiveIncidentCaptureManager) => void;
 };
+
+type RealtimeReportKeepAlive = {
+  observePacket: (packetType: AcLivePacket['type'], nowMs: number) => void;
+};
+
+function createRealtimeReportKeepAlive(
+  config: AppConfig,
+  logger: LiveLogger,
+  socket: Socket
+): RealtimeReportKeepAlive {
+  const summaryIntervalMs = 5000;
+  const baseCooldownMs = 15000;
+  const maxCooldownMs = 60000;
+  let nextSummaryAtMs = 0;
+  let windowPacketCount = 0;
+  let windowCarUpdateCount = 0;
+  let sawCarUpdateOnce = false;
+  let currentCooldownMs = baseCooldownMs;
+  let nextAllowedAttemptAtMs = 0;
+
+  return {
+    observePacket: (packetType, nowMs) => {
+      windowPacketCount += 1;
+
+      if (packetType === 'car_update') {
+        windowCarUpdateCount += 1;
+        sawCarUpdateOnce = true;
+      }
+
+      if (nowMs < nextSummaryAtMs) {
+        return;
+      }
+
+      const shouldAttemptReenable = sawCarUpdateOnce
+        && windowPacketCount > 0
+        && windowCarUpdateCount === 0
+        && nowMs >= nextAllowedAttemptAtMs;
+
+      if (shouldAttemptReenable) {
+        logger('warn', 'live-udp', 'Live UDP stream missing car_update packets while other traffic continues; re-sending realtime report enable command', {
+          windowPacketCount,
+          windowCarUpdateCount,
+          summaryIntervalMs,
+          cooldownMs: currentCooldownMs,
+          intervalMs: config.realtimeReportIntervalMs,
+          targetHost: config.acUdpServerHost,
+          targetPort: config.acUdpServerPluginPort,
+        });
+        sendRealtimeReportEnableCommand(socket, config, logger, 'Re-sent realtime report enable command');
+        nextAllowedAttemptAtMs = nowMs + currentCooldownMs;
+        currentCooldownMs = Math.min(currentCooldownMs * 2, maxCooldownMs);
+      }
+
+      if (windowCarUpdateCount > 0) {
+        currentCooldownMs = baseCooldownMs;
+      }
+
+      windowPacketCount = 0;
+      windowCarUpdateCount = 0;
+      nextSummaryAtMs = nowMs + summaryIntervalMs;
+    }
+  };
+}
 
 function createIncidentDebugLogger(
   config: AppConfig,
