@@ -1,5 +1,9 @@
 import type { PersistedLiveIncident } from '../db/repositories';
 import type { JsonRaceIncident, MatchedIncidentPair } from '../live/matchLiveIncidents';
+import { buildIncidentReconstruction } from '../reconstruction/buildIncidentReconstruction';
+import { createIncidentArtifacts } from '../reconstruction/createIncidentArtifacts';
+import type { ReconstructionTrackContextInput } from '../reconstruction/reconstructionTypes';
+import type { IncidentReconstructionDeliveryState, IncidentVisualArtifacts } from '../reconstruction/reconstructionTypes';
 import type { ParsedRace } from '../types/assetto';
 import { postDiscordWebhook, type DiscordWebhookMessage } from './sendWebhook';
 
@@ -15,9 +19,27 @@ type SendIncidentReportsInput = {
   fileName: string;
   race: ParsedRace;
   incidents: IncidentReportEntry[];
+  reconstructionTrackContext?: ReconstructionTrackContextInput;
 };
 
 export type IncidentReportMessage = DiscordWebhookMessage;
+
+type IncidentVisualStatus = Readonly<{
+  delivery: IncidentReconstructionDeliveryState;
+  frameCount: number;
+  attachmentIncluded: boolean;
+  notes: readonly string[];
+}>;
+
+type IncidentReportDelivery = Readonly<{
+  primaryMessage: IncidentReportMessage;
+  fallbackMessage?: IncidentReportMessage;
+}>;
+
+type IncidentReportDeliveryDependencies = Readonly<{
+  buildScene?: typeof buildIncidentReconstruction;
+  buildArtifacts?: typeof createIncidentArtifacts;
+}>;
 
 export async function sendIncidentReports(input: SendIncidentReportsInput): Promise<'sent' | 'skipped' | 'failed'> {
   if (!input.enabled) {
@@ -37,17 +59,29 @@ export async function sendIncidentReports(input: SendIncidentReportsInput): Prom
   let hadFailure = false;
 
   for (const incident of input.incidents) {
-    const message = buildIncidentReportMessage({
+    const delivery = createIncidentReportDelivery({
       fileName: input.fileName,
       race: input.race,
       liveIncident: incident.liveIncident,
       jsonIncident: incident.jsonIncident,
-      match: incident.match
+      match: incident.match,
+      reconstructionTrackContext: input.reconstructionTrackContext,
     });
-    const result = await postDiscordWebhook(input.webhookUrl, message, {
+    let result = await postDiscordWebhook(input.webhookUrl, delivery.primaryMessage, {
       disabledLogMessage: 'Incident webhook disabled, skipping incident report',
       successLogMessage: 'Sent Discord incident report'
     });
+
+    if (result === 'failed' && delivery.fallbackMessage) {
+      log('Incident visual attachment failed, retrying text-only incident report', {
+        fileName: input.fileName,
+        incidentUid: incident.liveIncident.incidentUid,
+      });
+      result = await postDiscordWebhook(input.webhookUrl, delivery.fallbackMessage, {
+        disabledLogMessage: 'Incident webhook disabled, skipping incident report',
+        successLogMessage: 'Sent Discord incident report after visual fallback'
+      });
+    }
 
     if (result === 'failed') {
       hadFailure = true;
@@ -55,6 +89,77 @@ export async function sendIncidentReports(input: SendIncidentReportsInput): Prom
   }
 
   return hadFailure ? 'failed' : 'sent';
+}
+
+export function createIncidentReportDelivery(
+  input: {
+    fileName: string;
+    race: ParsedRace;
+    liveIncident: PersistedLiveIncident;
+    jsonIncident: JsonRaceIncident;
+    match: MatchedIncidentPair;
+    reconstructionTrackContext?: ReconstructionTrackContextInput;
+  },
+  dependencies: IncidentReportDeliveryDependencies = {}
+): IncidentReportDelivery {
+  const baseMessage = buildIncidentReportMessage(input);
+  const buildScene = dependencies.buildScene ?? buildIncidentReconstruction;
+  const buildArtifacts = dependencies.buildArtifacts ?? createIncidentArtifacts;
+
+  if (!input.reconstructionTrackContext) {
+    return { primaryMessage: baseMessage };
+  }
+
+  try {
+    const scene = buildScene({
+      incident: input.liveIncident,
+      trackContextInput: input.reconstructionTrackContext,
+    });
+    const artifacts = buildArtifacts({ scene });
+    const primaryStatus = createVisualStatus(artifacts, Boolean(artifacts.staticSvg));
+
+    if (!artifacts.staticSvg) {
+      return {
+        primaryMessage: appendVisualStatus(baseMessage, primaryStatus),
+      };
+    }
+
+    return {
+      primaryMessage: appendVisualStatus(
+        {
+          ...baseMessage,
+          attachments: Object.freeze([artifacts.staticSvg]),
+        },
+        primaryStatus
+      ),
+      fallbackMessage: appendVisualStatus(
+        baseMessage,
+        Object.freeze({
+          delivery: 'omitted',
+          frameCount: artifacts.frames.length,
+          attachmentIncluded: false,
+          notes: Object.freeze([
+            ...artifacts.notes,
+            'incident.svg upload failed, so the report was sent without a visual attachment',
+          ]),
+        })
+      ),
+    };
+  } catch (error) {
+    return {
+      primaryMessage: appendVisualStatus(
+        baseMessage,
+        Object.freeze({
+          delivery: 'omitted',
+          frameCount: 0,
+          attachmentIncluded: false,
+          notes: Object.freeze([
+            `Visual reconstruction omitted after build failure: ${error instanceof Error ? error.message : String(error)}`,
+          ]),
+        })
+      ),
+    };
+  }
 }
 
 export function buildIncidentReportMessage(input: {
@@ -197,6 +302,52 @@ function formatExplanation(explanation: string[]): string {
   }
 
   return explanation.map((entry) => `- ${entry}`).join('\n');
+}
+
+function createVisualStatus(artifacts: IncidentVisualArtifacts, attachmentIncluded: boolean): IncidentVisualStatus {
+  return Object.freeze({
+    delivery: artifacts.delivery,
+    frameCount: artifacts.frames.length,
+    attachmentIncluded,
+    notes: Object.freeze([...artifacts.notes]),
+  });
+}
+
+function appendVisualStatus(message: IncidentReportMessage, status: IncidentVisualStatus): IncidentReportMessage {
+  const visualSummary = formatVisualStatus(status);
+  const embed = message.webhookBody.embeds[0];
+  const embeds = embed
+    ? [
+        {
+          ...embed,
+          fields: [...embed.fields, { name: 'Reconstrucción visual', value: visualSummary, inline: false }],
+        },
+        ...message.webhookBody.embeds.slice(1),
+      ]
+    : message.webhookBody.embeds;
+
+  return {
+    ...message,
+    summaryText: `${message.summaryText}\n\nReconstrucción visual:\n${visualSummary}`,
+    webhookBody: {
+      ...message.webhookBody,
+      embeds,
+    },
+  };
+}
+
+function formatVisualStatus(status: IncidentVisualStatus): string {
+  const lines = [
+    `Estado: ${status.delivery}`,
+    `Frames: ${status.frameCount}`,
+    `Adjunto SVG: ${status.attachmentIncluded ? 'sí' : 'no'}`,
+  ];
+
+  if (status.notes.length > 0) {
+    lines.push(`Notas:\n${status.notes.map((note) => `- ${note}`).join('\n')}`);
+  }
+
+  return lines.join('\n');
 }
 
 function log(message: string, fields: Record<string, unknown>): void {

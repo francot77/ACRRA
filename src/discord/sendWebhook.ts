@@ -7,6 +7,12 @@ export async function sendWebhook(webhookUrl: string, message: RaceMessage): Pro
   });
 }
 
+export type DiscordWebhookAttachment = Readonly<{
+  filename: string;
+  contentType: string;
+  bytes: Buffer;
+}>;
+
 export type DiscordWebhookMessage = {
   title: string;
   summaryText: string;
@@ -24,6 +30,7 @@ export type DiscordWebhookMessage = {
       footer: { text: string };
     }>;
   };
+  attachments?: readonly DiscordWebhookAttachment[];
 };
 
 export async function postDiscordWebhook(
@@ -40,12 +47,15 @@ export async function postDiscordWebhook(
   }
 
   try {
+    const hasAttachments = (message.attachments?.length ?? 0) > 0;
     const response = await fetch(webhookUrl, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify(message.webhookBody)
+      headers: hasAttachments
+        ? undefined
+        : {
+            'content-type': 'application/json'
+          },
+      body: hasAttachments ? buildMultipartWebhookBody(message) : JSON.stringify(message.webhookBody)
     });
 
     if (!response.ok) {
@@ -66,6 +76,20 @@ export async function postDiscordWebhook(
     });
     return 'failed';
   }
+}
+
+function buildMultipartWebhookBody(message: DiscordWebhookMessage): FormData {
+  const form = new FormData();
+  form.set('payload_json', JSON.stringify(message.webhookBody));
+
+  for (const [index, attachment] of (message.attachments ?? []).entries()) {
+    form.set(
+      `files[${index}]`,
+      new File([Uint8Array.from(attachment.bytes)], attachment.filename, { type: attachment.contentType })
+    );
+  }
+
+  return form;
 }
 
 function log(level: 'info' | 'error', component: string, message: string, fields: Record<string, unknown>): void {

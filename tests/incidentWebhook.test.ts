@@ -6,9 +6,11 @@ import test from 'node:test';
 import type { AppConfig } from '../src/config';
 import { openDatabase } from '../src/db/db';
 import { createRepositories, type PersistedLiveIncident } from '../src/db/repositories';
-import { buildIncidentReportMessage, sendIncidentReports } from '../src/discord/sendIncidentReport';
+import { buildIncidentReportMessage, createIncidentReportDelivery, sendIncidentReports } from '../src/discord/sendIncidentReport';
 import { createRaceProcessor } from '../src/index';
 import type { JsonRaceIncident, MatchedIncidentPair } from '../src/live/matchLiveIncidents';
+import { TrackQueryService } from '../src/track/trackQueryService';
+import type { TrackRuntimeModel } from '../src/track/trackTypes';
 import type { ParsedRace } from '../src/types/assetto';
 
 function createConfig(resultsDir: string, databasePath: string, overrides: Partial<AppConfig> = {}): AppConfig {
@@ -309,3 +311,141 @@ test('grouped incident results in one separate report, not spam', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('createIncidentReportDelivery attaches incident.svg and visual metadata when reconstruction succeeds', () => {
+  const incident = createMatchedCarIncident();
+  const delivery = createIncidentReportDelivery({
+    fileName: 'sample-race.json',
+    race: createRace(),
+    liveIncident: incident.liveIncident,
+    jsonIncident: incident.jsonIncident,
+    match: incident.match,
+    reconstructionTrackContext: createReconstructionTrackContext(),
+  });
+
+  assert.equal(delivery.primaryMessage.attachments?.[0]?.filename, 'incident.svg');
+  const visualField = delivery.primaryMessage.webhookBody.embeds[0]?.fields.find((field) => field.name === 'Reconstrucción visual');
+  assert.match(visualField?.value ?? '', /Estado: sequence_ready/);
+  assert.match(visualField?.value ?? '', /Adjunto SVG: sí/);
+  assert.equal(delivery.fallbackMessage?.attachments, undefined);
+  assert.match(delivery.fallbackMessage?.summaryText ?? '', /upload failed/);
+});
+
+test('createIncidentReportDelivery keeps text-only message when artifact budget omits the svg', () => {
+  const incident = createMatchedCarIncident();
+  const delivery = createIncidentReportDelivery(
+    {
+      fileName: 'sample-race.json',
+      race: createRace(),
+      liveIncident: incident.liveIncident,
+      jsonIncident: incident.jsonIncident,
+      match: incident.match,
+      reconstructionTrackContext: createReconstructionTrackContext(),
+    },
+    {
+      buildArtifacts: ({ scene }) => ({
+        delivery: 'omitted',
+        frames: [{ atRelativeMs: 0, source: 'observed', cars: [] }],
+        notes: [...scene.notes, 'incident.svg omitted because 999999 bytes exceeded local budget 131072'],
+      }),
+    }
+  );
+
+  assert.equal(delivery.primaryMessage.attachments, undefined);
+  assert.equal(delivery.fallbackMessage, undefined);
+  assert.match(delivery.primaryMessage.summaryText, /Estado: omitted/);
+  assert.match(delivery.primaryMessage.summaryText, /incident\.svg omitted/);
+});
+
+test('sendIncidentReports retries text-only delivery after multipart webhook failure', async () => {
+  const fetchCalls: Array<{ url: string; body: unknown; headers: HeadersInit | undefined }> = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    fetchCalls.push({ url: String(input), body: init?.body, headers: init?.headers });
+    return fetchCalls.length === 1
+      ? new Response('attachment rejected', { status: 500, statusText: 'ERR' })
+      : new Response(null, { status: 200, statusText: 'OK' });
+  }) as typeof fetch;
+
+  try {
+    const result = await sendIncidentReports({
+      enabled: true,
+      webhookUrl: 'https://discord.example/incidents',
+      fileName: 'sample-race.json',
+      race: createRace(),
+      incidents: [createMatchedCarIncident()],
+      reconstructionTrackContext: createReconstructionTrackContext(),
+    });
+
+    assert.equal(result, 'sent');
+    assert.equal(fetchCalls.length, 2);
+    assert.ok(fetchCalls[0]?.body instanceof FormData);
+    assert.equal((fetchCalls[1]?.headers as Record<string, string>)['content-type'], 'application/json');
+    assert.match(String(fetchCalls[1]?.body ?? ''), /Estado: omitted/);
+    assert.match(String(fetchCalls[1]?.body ?? ''), /upload failed/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('createIncidentReportDelivery falls back to text-only metadata when artifact build throws', () => {
+  const incident = createMatchedCarIncident();
+  const delivery = createIncidentReportDelivery(
+    {
+      fileName: 'sample-race.json',
+      race: createRace(),
+      liveIncident: incident.liveIncident,
+      jsonIncident: incident.jsonIncident,
+      match: incident.match,
+      reconstructionTrackContext: createReconstructionTrackContext(),
+    },
+    {
+      buildArtifacts: () => {
+        throw new Error('render pipeline exploded');
+      },
+    }
+  );
+
+  assert.equal(delivery.primaryMessage.attachments, undefined);
+  assert.equal(delivery.fallbackMessage, undefined);
+  assert.match(delivery.primaryMessage.summaryText, /Visual reconstruction omitted after build failure: render pipeline exploded/);
+});
+
+function createReconstructionTrackContext() {
+  return {
+    queryService: new TrackQueryService(createRuntime()),
+    sessionTrackIdentity: { trackName: 'monza', trackConfig: null },
+  } as const;
+}
+
+function createRuntime(): TrackRuntimeModel {
+  return Object.freeze({
+    schemaVersion: 1,
+    track: 'monza',
+    layout: null,
+    totalLengthMeters: 1000,
+    pointCount: 4,
+    points: Object.freeze([
+      createPoint({ index: 0, normalized: 0, center: { x: 0, y: 0, z: 0 }, leftEdge: { x: 0, y: 0, z: 5 }, rightEdge: { x: 0, y: 0, z: -5 } }),
+      createPoint({ index: 1, normalized: 0.25, center: { x: 10, y: 0, z: 0 }, leftEdge: { x: 10, y: 0, z: 5 }, rightEdge: { x: 10, y: 0, z: -5 } }),
+      createPoint({ index: 2, normalized: 0.5, center: { x: 20, y: 0, z: 4 }, leftEdge: { x: 20, y: 0, z: 9 }, rightEdge: { x: 20, y: 0, z: -1 } }),
+      createPoint({ index: 3, normalized: 0.75, center: { x: 30, y: 0, z: 8 }, leftEdge: { x: 30, y: 0, z: 13 }, rightEdge: { x: 30, y: 0, z: 3 } }),
+    ]),
+  });
+}
+
+function createPoint(overrides: Partial<TrackRuntimeModel['points'][number]> = {}): TrackRuntimeModel['points'][number] {
+  return Object.freeze({
+    index: overrides.index ?? 0,
+    s: overrides.s ?? 0,
+    normalized: overrides.normalized ?? 0,
+    center: Object.freeze(overrides.center ?? { x: 0, y: 0, z: 0 }),
+    forward: Object.freeze(overrides.forward ?? { x: 1, y: 0, z: 0 }),
+    sideLeft: overrides.sideLeft ?? 5,
+    sideRight: overrides.sideRight ?? 5,
+    width: overrides.width ?? 10,
+    leftEdge: Object.freeze(overrides.leftEdge ?? { x: 0, y: 0, z: 5 }),
+    rightEdge: Object.freeze(overrides.rightEdge ?? { x: 0, y: 0, z: -5 }),
+  });
+}

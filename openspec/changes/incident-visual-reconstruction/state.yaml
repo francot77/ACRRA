@@ -1,0 +1,13 @@
+change: incident-visual-reconstruction
+artifact_store: openspec
+execution_mode: interactive
+delivery_strategy: ask-always
+review_budget_lines: 400
+status: tasks-ready
+updated_at: 2026-06-29
+artifacts:
+  exploration: done
+  proposal: done
+  spec: done
+  design: done
+  tasks: done

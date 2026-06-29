@@ -176,7 +176,8 @@ export function createRaceProcessor(
       webhookUrl: config.incidentsDiscordWebhookUrl,
       fileName,
       race,
-      incidents: incidentsForReporting
+      incidents: incidentsForReporting,
+      reconstructionTrackContext: verdictTrackInput,
     });
 
     return 'processed';

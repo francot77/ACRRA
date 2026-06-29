@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildRaceMessage } from '../src/discord/buildRaceMessage';
-import { sendWebhook } from '../src/discord/sendWebhook';
+import { postDiscordWebhook, sendWebhook } from '../src/discord/sendWebhook';
 import { DriverRaceStats, GroupedIncident, ParsedRace } from '../src/types/assetto';
 
 function createRace(): ParsedRace {
@@ -195,6 +195,78 @@ test('configured webhook sends exactly one request with the required race report
   assert.match(awardsField?.value ?? '', /📈 Más consistente/);
   assert.match(awardsField?.value ?? '', /🐢 Tortuga digna/);
   assert.doesNotMatch(awardsField?.value ?? '', /No aplica/);
+});
+
+test('postDiscordWebhook sends multipart form data when attachments are present', async (t) => {
+  const fetchCalls: Array<{ input: string; init?: RequestInit }> = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    fetchCalls.push({ input: String(input), init });
+    return new Response(null, { status: 200, statusText: 'OK' });
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const result = await postDiscordWebhook(
+    'https://discord.example/webhook',
+    {
+      title: 'Incident visual report',
+      summaryText: 'Incident visual report summary',
+      webhookBody: {
+        content: 'Incident visual report',
+        embeds: [
+          {
+            title: 'Incident visual report',
+            description: 'Attachment test',
+            color: 0xf5a623,
+            fields: [],
+            footer: { text: 'footer' },
+          },
+        ],
+      },
+      attachments: [
+        {
+          filename: 'incident.svg',
+          contentType: 'image/svg+xml',
+          bytes: Buffer.from('<svg></svg>', 'utf8'),
+        },
+      ],
+    },
+    {
+      disabledLogMessage: 'disabled',
+      successLogMessage: 'sent',
+    }
+  );
+
+  assert.equal(result, 'sent');
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0]?.input, 'https://discord.example/webhook');
+  assert.equal(fetchCalls[0]?.init?.method, 'POST');
+  assert.equal(fetchCalls[0]?.init?.headers, undefined);
+  assert.ok(fetchCalls[0]?.init?.body instanceof FormData);
+
+  const form = fetchCalls[0]?.init?.body as FormData;
+  assert.equal(form.get('payload_json'), JSON.stringify({
+    content: 'Incident visual report',
+    embeds: [
+      {
+        title: 'Incident visual report',
+        description: 'Attachment test',
+        color: 0xf5a623,
+        fields: [],
+        footer: { text: 'footer' },
+      },
+    ],
+  }));
+
+  const attachment = form.get('files[0]');
+  assert.ok(attachment instanceof File);
+  assert.equal(attachment?.name, 'incident.svg');
+  assert.equal(attachment?.type, 'image/svg+xml');
+  assert.equal(await attachment?.text(), '<svg></svg>');
 });
 
 test('report excludes DNS from awards, marks DNF and DNS, and formats impacts without raw milliseconds', () => {
