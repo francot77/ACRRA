@@ -36,6 +36,7 @@ test('bootstrapApplication loads the track runtime before database, UDP, and wat
           list: () => [],
           listPendingMatch: () => [],
           markMatched: () => false,
+          deleteMatched: () => 0,
         },
       } as ReturnType<typeof import('../../src/db/repositories').createRepositories>;
     },

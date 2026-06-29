@@ -71,6 +71,9 @@ function createRepositories(processedFiles: Set<string>): Repositories {
       },
       markMatched() {
         return false;
+      },
+      deleteMatched() {
+        return 0;
       }
     }
   } as Repositories;

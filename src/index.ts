@@ -171,7 +171,7 @@ export function createRaceProcessor(
       nuclearMissileMinCarImpactKmh: config.nuclearMissileMinCarImpactKmh
     });
     await sendWebhook(config.discordWebhookUrl, raceMessage);
-    await sendIncidentReports({
+    const incidentReportResult = await sendIncidentReports({
       enabled: config.incidentsWebhookEnabled,
       webhookUrl: config.incidentsDiscordWebhookUrl,
       fileName,
@@ -179,6 +179,25 @@ export function createRaceProcessor(
       incidents: incidentsForReporting,
       reconstructionTrackContext: verdictTrackInput,
     });
+
+    if (incidentReportResult.deliveredIncidentIds.length > 0) {
+      try {
+        const deletedIncidents = repositories.liveIncidents.deleteMatched(incidentReportResult.deliveredIncidentIds);
+        log('info', 'processor', 'Cleaned up delivered live incidents from SQLite', {
+          fileName,
+          raceId: persistence.raceId,
+          deliveredIncidentReports: incidentReportResult.deliveredIncidentIds.length,
+          deletedIncidents,
+        });
+      } catch (error) {
+        log('warn', 'processor', 'Failed to clean up delivered live incidents from SQLite', {
+          fileName,
+          raceId: persistence.raceId,
+          deliveredIncidentReports: incidentReportResult.deliveredIncidentIds.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     return 'processed';
   };

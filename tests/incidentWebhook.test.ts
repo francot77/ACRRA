@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { copyFileSync, mkdtempSync, mkdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -8,7 +9,8 @@ import { openDatabase } from '../src/db/db';
 import { createRepositories, type PersistedLiveIncident } from '../src/db/repositories';
 import { buildIncidentReportMessage, createIncidentReportDelivery, sendIncidentReports } from '../src/discord/sendIncidentReport';
 import { createRaceProcessor } from '../src/index';
-import type { JsonRaceIncident, MatchedIncidentPair } from '../src/live/matchLiveIncidents';
+import { extractRaceCollisionEvents, type JsonRaceIncident, type MatchedIncidentPair } from '../src/live/matchLiveIncidents';
+import { parseRaceJson } from '../src/parser/parseRaceJson';
 import { TrackQueryService } from '../src/track/trackQueryService';
 import type { TrackRuntimeModel } from '../src/track/trackTypes';
 import type { ParsedRace } from '../src/types/assetto';
@@ -229,7 +231,8 @@ test('skips cleanly when incidents webhook disabled', async () => {
       incidents: [createMatchedCarIncident()]
     });
 
-    assert.equal(result, 'skipped');
+    assert.equal(result.status, 'skipped');
+    assert.deepEqual(result.deliveredIncidentIds, []);
     assert.equal(fetchCalls.length, 0);
   } finally {
     globalThis.fetch = originalFetch;
@@ -354,7 +357,8 @@ test('grouped incident results in one separate report, not spam', async () => {
       incidents: [createMatchedCarIncident()]
     });
 
-    assert.equal(result, 'sent');
+    assert.equal(result.status, 'sent');
+    assert.deepEqual(result.deliveredIncidentIds, [1]);
     assert.equal(fetchCalls.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
@@ -378,7 +382,8 @@ test('sendIncidentReports filters out env incidents and preserves auto-vs-auto r
       incidents: [createMatchedEnvIncident(), createMatchedCarIncident()]
     });
 
-    assert.equal(result, 'sent');
+    assert.equal(result.status, 'sent');
+    assert.deepEqual(result.deliveredIncidentIds, [1]);
     assert.equal(fetchCalls.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
@@ -451,7 +456,8 @@ test('sendIncidentReports retries text-only delivery after multipart webhook fai
       reconstructionTrackContext: createReconstructionTrackContext(),
     });
 
-    assert.equal(result, 'sent');
+    assert.equal(result.status, 'sent');
+    assert.deepEqual(result.deliveredIncidentIds, [1]);
     assert.equal(fetchCalls.length, 2);
     assert.ok(fetchCalls[0]?.body instanceof FormData);
     assert.equal((fetchCalls[1]?.headers as Record<string, string>)['content-type'], 'application/json');
@@ -460,6 +466,94 @@ test('sendIncidentReports retries text-only delivery after multipart webhook fai
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('processor deletes matched live incident rows only after incident report delivery succeeds', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'motassettorr-incident-cleanup-success-'));
+  const resultsDir = join(directory, 'results');
+  const databasePath = join(directory, 'ac-race-monitor.sqlite');
+  const sampleFileName = '2026_6_20_4_0_RACE.json';
+  const samplePath = join(resultsDir, sampleFileName);
+  const originalFetch = globalThis.fetch;
+  const originalInfo = console.info;
+
+  mkdirSync(resultsDir, { recursive: true });
+  copyFileSync(resolve(process.cwd(), 'samples/results', sampleFileName), samplePath);
+
+  const database = openDatabase(databasePath);
+  const repositories = createRepositories(database);
+  const config = createConfig(resultsDir, databasePath);
+  const processRaceFile = createRaceProcessor(config, repositories);
+  const alignedIncident = seedMatchedCarIncidentFromSample(repositories, samplePath, sampleFileName);
+
+  globalThis.fetch = (async () => new Response(null, { status: 200, statusText: 'OK' })) as typeof fetch;
+  console.info = () => {};
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    console.info = originalInfo;
+    database.close();
+  });
+
+  const beforeSnapshots = database.prepare('SELECT COUNT(*) AS count FROM live_incident_snapshots WHERE incident_id = ?').get(alignedIncident.id) as { count: number };
+  assert.ok(beforeSnapshots.count > 0);
+
+  const result = await processRaceFile(samplePath);
+  const persistedIncident = repositories.liveIncidents.list().find((incident) => incident.id === alignedIncident.id);
+  const incidentRowCount = (database.prepare('SELECT COUNT(*) AS count FROM live_incidents WHERE id = ?').get(alignedIncident.id) as { count: number }).count;
+  const snapshotRowCount = (database.prepare('SELECT COUNT(*) AS count FROM live_incident_snapshots WHERE incident_id = ?').get(alignedIncident.id) as { count: number }).count;
+
+  assert.equal(result, 'processed');
+  assert.equal(persistedIncident, undefined);
+  assert.equal(incidentRowCount, 0);
+  assert.equal(snapshotRowCount, 0);
+});
+
+test('processor keeps matched live incident rows when incident report delivery fails', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'motassettorr-incident-cleanup-failed-'));
+  const resultsDir = join(directory, 'results');
+  const databasePath = join(directory, 'ac-race-monitor.sqlite');
+  const sampleFileName = '2026_6_20_4_0_RACE.json';
+  const samplePath = join(resultsDir, sampleFileName);
+  const originalFetch = globalThis.fetch;
+  const originalInfo = console.info;
+
+  mkdirSync(resultsDir, { recursive: true });
+  copyFileSync(resolve(process.cwd(), 'samples/results', sampleFileName), samplePath);
+
+  const database = openDatabase(databasePath);
+  const repositories = createRepositories(database);
+  const config = createConfig(resultsDir, databasePath);
+  const processRaceFile = createRaceProcessor(config, repositories);
+  const alignedIncident = seedMatchedCarIncidentFromSample(repositories, samplePath, sampleFileName);
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    return url.includes('/incidents')
+      ? new Response('incident webhook down', { status: 500, statusText: 'ERR' })
+      : new Response(null, { status: 200, statusText: 'OK' });
+  }) as typeof fetch;
+  console.info = () => {};
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    console.info = originalInfo;
+    database.close();
+  });
+
+  const result = await processRaceFile(samplePath);
+  const persistedIncident = repositories.liveIncidents.list().find((incident) => incident.id === alignedIncident.id);
+  const incidentRow = database.prepare('SELECT matched, race_id FROM live_incidents WHERE id = ?').get(alignedIncident.id) as {
+    matched: number;
+    race_id: number | null;
+  };
+  const snapshotRowCount = (database.prepare('SELECT COUNT(*) AS count FROM live_incident_snapshots WHERE incident_id = ?').get(alignedIncident.id) as { count: number }).count;
+
+  assert.equal(result, 'processed');
+  assert.ok(persistedIncident);
+  assert.equal(incidentRow.matched, 1);
+  assert.notEqual(incidentRow.race_id, null);
+  assert.ok(snapshotRowCount > 0);
 });
 
 test('createIncidentReportDelivery falls back to text-only metadata when artifact build throws', () => {
@@ -490,6 +584,80 @@ function createReconstructionTrackContext() {
     queryService: new TrackQueryService(createRuntime()),
     sessionTrackIdentity: { trackName: 'monza', trackConfig: null },
   } as const;
+}
+
+function seedMatchedCarIncidentFromSample(
+  repositories: ReturnType<typeof createRepositories>,
+  samplePath: string,
+  sampleFileName: string
+): PersistedLiveIncident {
+  const race = parseRaceJson(readFileSync(samplePath, 'utf8'), sampleFileName);
+  const jsonIncident = extractRaceCollisionEvents(race).find((incident) => incident.type === 'collision_with_car');
+
+  assert.ok(jsonIncident);
+  assert.ok(jsonIncident.worldPosition);
+
+  const seeded = repositories.liveIncidents.persist({
+    incident: {
+      incidentId: `cleanup-${jsonIncident.eventIndex}`,
+      type: 'collision_with_car',
+      firstReceivedAtMs: Date.parse('2026-06-20T04:00:00.000Z'),
+      lastReceivedAtMs: Date.parse('2026-06-20T04:00:00.200Z'),
+      captureStartMs: -3000,
+      captureEndMs: 1500,
+      anchorPosition: jsonIncident.worldPosition,
+      events: [
+        {
+          type: 'collision_with_car',
+          receivedAt: '2026-06-20T04:00:00.000Z',
+          receivedAtMs: Date.parse('2026-06-20T04:00:00.000Z'),
+          carId: jsonIncident.carId,
+          otherCarId: jsonIncident.otherCarId,
+          impactSpeed: jsonIncident.impactSpeed,
+          worldPosition: jsonIncident.worldPosition,
+          relativePosition: { x: 0.1, y: 0, z: -0.1 },
+        },
+      ],
+      cars: [
+        {
+          carId: jsonIncident.carId,
+          snapshots: [
+            {
+              receivedAtMs: Date.parse('2026-06-20T03:59:59.900Z'),
+              carId: jsonIncident.carId,
+              pos: jsonIncident.worldPosition,
+              velocity: { x: 10, y: 0, z: 0 },
+              speedKmh: Math.max(jsonIncident.impactSpeed + 10, 20),
+              gear: 4,
+              engineRpm: 6000,
+              normalizedSplinePos: 0.25,
+            },
+          ],
+        },
+        {
+          carId: jsonIncident.otherCarId,
+          snapshots: [
+            {
+              receivedAtMs: Date.parse('2026-06-20T03:59:59.900Z'),
+              carId: jsonIncident.otherCarId,
+              pos: { x: jsonIncident.worldPosition.x + 1, y: jsonIncident.worldPosition.y, z: jsonIncident.worldPosition.z + 1 },
+              velocity: { x: 8, y: 0, z: 0 },
+              speedKmh: Math.max(jsonIncident.impactSpeed, 10),
+              gear: 4,
+              engineRpm: 5800,
+              normalizedSplinePos: 0.251,
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(seeded.status, 'inserted');
+
+  const incident = repositories.liveIncidents.list().find((entry) => entry.id === seeded.incidentId);
+  assert.ok(incident);
+  return incident;
 }
 
 function createRuntime(): TrackRuntimeModel {

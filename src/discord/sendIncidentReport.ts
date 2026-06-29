@@ -22,6 +22,11 @@ type SendIncidentReportsInput = {
   reconstructionTrackContext?: ReconstructionTrackContextInput;
 };
 
+export type SendIncidentReportsResult = Readonly<{
+  status: 'sent' | 'skipped' | 'failed';
+  deliveredIncidentIds: number[];
+}>;
+
 export type IncidentReportMessage = DiscordWebhookMessage;
 
 type IncidentVisualStatus = Readonly<{
@@ -41,24 +46,25 @@ type IncidentReportDeliveryDependencies = Readonly<{
   buildArtifacts?: typeof createIncidentArtifacts;
 }>;
 
-export async function sendIncidentReports(input: SendIncidentReportsInput): Promise<'sent' | 'skipped' | 'failed'> {
+export async function sendIncidentReports(input: SendIncidentReportsInput): Promise<SendIncidentReportsResult> {
   if (!input.enabled) {
     log('Incident webhook disabled by config', { fileName: input.fileName, incidents: input.incidents.length });
-    return 'skipped';
+    return { status: 'skipped', deliveredIncidentIds: [] };
   }
 
   if (!input.webhookUrl.trim()) {
     log('Incident webhook URL empty, skipping incident reports', { fileName: input.fileName, incidents: input.incidents.length });
-    return 'skipped';
+    return { status: 'skipped', deliveredIncidentIds: [] };
   }
 
   const reportableIncidents = input.incidents.filter(isReportableIncident);
 
   if (reportableIncidents.length === 0) {
-    return 'skipped';
+    return { status: 'skipped', deliveredIncidentIds: [] };
   }
 
   let hadFailure = false;
+  const deliveredIncidentIds: number[] = [];
 
   for (const incident of reportableIncidents) {
     const delivery = createIncidentReportDelivery({
@@ -87,10 +93,16 @@ export async function sendIncidentReports(input: SendIncidentReportsInput): Prom
 
     if (result === 'failed') {
       hadFailure = true;
+      continue;
     }
+
+    deliveredIncidentIds.push(incident.liveIncident.id);
   }
 
-  return hadFailure ? 'failed' : 'sent';
+  return {
+    status: hadFailure ? 'failed' : 'sent',
+    deliveredIncidentIds,
+  };
 }
 
 function isReportableIncident(incident: IncidentReportEntry): boolean {

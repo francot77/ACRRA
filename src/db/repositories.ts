@@ -494,6 +494,29 @@ export function createRepositories(database: AppDatabase) {
           verdictExplanationJson: verdict ? JSON.stringify(verdict.explanation) : null,
         });
         return Number(result.changes) > 0;
+      },
+      deleteMatched(incidentIds: number[]): number {
+        const uniqueIds = [...new Set(incidentIds.filter((id) => Number.isInteger(id) && id > 0))];
+        if (uniqueIds.length === 0) {
+          return 0;
+        }
+
+        const placeholders = uniqueIds.map(() => '?').join(', ');
+        const deleteMatchedIncidentsStatement = database.prepare(`
+          DELETE FROM live_incidents
+          WHERE matched = 1 AND race_id IS NOT NULL AND id IN (${placeholders})
+        `);
+
+        database.exec('BEGIN IMMEDIATE');
+
+        try {
+          const result = deleteMatchedIncidentsStatement.run(...uniqueIds);
+          database.exec('COMMIT');
+          return Number(result.changes);
+        } catch (error) {
+          database.exec('ROLLBACK');
+          throw error;
+        }
       }
     }
   };
