@@ -56,6 +56,113 @@ test('keeps legacy rear-end fallback when bounded geometry is unavailable', () =
   assert.equal(verdict.blamedCarId, 8);
 });
 
+test('recovers an obvious rear-end when geometry resolves but order stays inconclusive', () => {
+  const verdictTrackInput = createVerdictTrackInput();
+  const trackContext = verdictTrackInput.queryService.projectByProgress(0);
+  const verdict = analyzeIncidentVerdict(
+    createIncident({
+      carId: 7,
+      otherCarId: 8,
+      snapshots: [
+        createSnapshot({
+          carId: 7,
+          relativeMs: -90,
+          normalizedSplinePos: 0.205,
+          pos: { x: 2.2, y: 0, z: 0 },
+          velocity: { x: 28, y: 0, z: 0 },
+          speedKmh: 100.8,
+          trackContext,
+        }),
+        createSnapshot({
+          carId: 8,
+          relativeMs: -70,
+          normalizedSplinePos: 0.202,
+          pos: { x: 0.5, y: 0, z: 0 },
+          velocity: { x: 37, y: 0, z: 0 },
+          speedKmh: 133.2,
+          trackContext,
+        }),
+      ],
+    }),
+    verdictTrackInput
+  );
+
+  assert.equal(verdict.type, 'possible_rear_end');
+  assert.equal(verdict.blamedCarId, 8);
+  assert.match(verdict.explanation.join(' '), /closing speed favored car 8/i);
+});
+
+test('allows rear-end fallback when geometry is mixed-source and still weak', () => {
+  const verdictTrackInput = createVerdictTrackInput();
+  const primaryTrackContext = verdictTrackInput.queryService.projectByProgress(0);
+  const verdict = analyzeIncidentVerdict(
+    createIncident({
+      carId: 7,
+      otherCarId: 8,
+      snapshots: [
+        createSnapshot({
+          carId: 7,
+          relativeMs: -90,
+          normalizedSplinePos: 0.205,
+          pos: { x: 2.1, y: 0, z: 0 },
+          velocity: { x: 29, y: 0, z: 0 },
+          speedKmh: 104.4,
+          trackContext: primaryTrackContext,
+        }),
+        createSnapshot({
+          carId: 8,
+          relativeMs: -60,
+          normalizedSplinePos: 0.202,
+          pos: { x: 0.7, y: 0, z: 0 },
+          velocity: { x: 38, y: 0, z: 0 },
+          speedKmh: 136.8,
+        }),
+      ],
+    }),
+    verdictTrackInput
+  );
+
+  assert.equal(verdict.type, 'possible_rear_end');
+  assert.equal(verdict.blamedCarId, 8);
+});
+
+test('keeps strong geometry contradiction ahead of rear-end fallback', () => {
+  const verdictTrackInput = createVerdictTrackInput();
+  const primaryTrackContext = verdictTrackInput.queryService.projectByProgress(0.5);
+  const secondaryTrackContext = verdictTrackInput.queryService.projectByProgress(0);
+  const verdict = analyzeIncidentVerdict(
+    createIncident({
+      carId: 7,
+      otherCarId: 8,
+      snapshots: [
+        createSnapshot({
+          carId: 7,
+          relativeMs: -80,
+          pos: { x: 0, y: 0, z: 0 },
+          velocity: { x: 20, y: 0, z: 0 },
+          speedKmh: 72,
+          normalizedSplinePos: 0.22,
+          trackContext: primaryTrackContext,
+        }),
+        createSnapshot({
+          carId: 8,
+          relativeMs: -70,
+          pos: { x: 4, y: 0, z: 0 },
+          velocity: { x: 10, y: 0, z: 0 },
+          speedKmh: 36,
+          normalizedSplinePos: 0.20,
+          trackContext: secondaryTrackContext,
+        }),
+      ],
+    }),
+    verdictTrackInput
+  );
+
+  assert.equal(verdict.type, 'unknown');
+  assert.ok(verdict.confidence < 0.4);
+  assert.match(verdict.explanation.join(' '), /contradict/i);
+});
+
 test('classifies inside overlap with no remaining corridor as possible squeeze', () => {
   const verdictTrackInput = createVerdictTrackInput();
   const primaryTrackContext = verdictTrackInput.queryService.projectByProgress(0);
@@ -123,43 +230,6 @@ test('classifies late inside arrival as possible divebomb', () => {
   assert.equal(verdict.type, 'possible_divebomb');
   assert.equal(verdict.blamedCarId, 7);
   assert.match(verdict.explanation.join(' '), /arrived from behind on the inside/i);
-});
-
-test('downgrades decisive blame when spline progress contradicts local geometry', () => {
-  const verdictTrackInput = createVerdictTrackInput();
-  const primaryTrackContext = verdictTrackInput.queryService.projectByProgress(0.5);
-  const secondaryTrackContext = verdictTrackInput.queryService.projectByProgress(0);
-  const verdict = analyzeIncidentVerdict(
-    createIncident({
-      carId: 7,
-      otherCarId: 8,
-      snapshots: [
-        createSnapshot({
-          carId: 7,
-          relativeMs: -80,
-          pos: { x: 0, y: 0, z: 0 },
-          velocity: { x: 20, y: 0, z: 0 },
-          speedKmh: 72,
-          normalizedSplinePos: 0.22,
-          trackContext: primaryTrackContext,
-        }),
-        createSnapshot({
-          carId: 8,
-          relativeMs: -70,
-          pos: { x: 4, y: 0, z: 0 },
-          velocity: { x: 10, y: 0, z: 0 },
-          speedKmh: 36,
-          normalizedSplinePos: 0.20,
-          trackContext: secondaryTrackContext,
-        }),
-      ],
-    }),
-    verdictTrackInput
-  );
-
-  assert.equal(verdict.type, 'unknown');
-  assert.ok(verdict.confidence < 0.4);
-  assert.match(verdict.explanation.join(' '), /contradict/i);
 });
 
 test('reprojects nullable-safe world-position telemetry through the verdict engine', () => {

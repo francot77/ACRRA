@@ -143,6 +143,57 @@ function createMatchedCarIncident(): {
   };
 }
 
+function createMatchedEnvIncident(): {
+  liveIncident: PersistedLiveIncident;
+  jsonIncident: JsonRaceIncident;
+  match: MatchedIncidentPair;
+} {
+  return {
+    liveIncident: {
+      id: 2,
+      incidentUid: 'incident-env-1',
+      raceId: 10,
+      type: 'collision_with_env',
+      carId: 7,
+      otherCarId: null,
+      impactSpeed: 46,
+      worldPosition: { x: 15, y: 0, z: 30 },
+      relativePosition: { x: 0.2, y: 0, z: -0.1 },
+      createdAt: '2026-06-23T00:00:00.000Z',
+      firstReceivedAt: '2026-06-23T00:00:00.000Z',
+      lastReceivedAt: '2026-06-23T00:00:00.300Z',
+      captureStartMs: -3000,
+      captureEndMs: 1500,
+      matched: true,
+      matchedAt: '2026-06-23T00:00:01.000Z',
+      verdictType: 'possible_env_contact',
+      verdictConfidence: 0.61,
+      verdictBlamedCarId: null,
+      verdictExplanation: ['The car left the racing surface before impact'],
+      snapshots: [],
+    },
+    jsonIncident: {
+      source: 'json',
+      status: 'unmatched',
+      eventIndex: 13,
+      type: 'collision_with_env',
+      carId: 7,
+      otherCarId: null,
+      driverName: 'ramen',
+      otherDriverName: null,
+      impactSpeed: 44,
+      worldPosition: { x: 14, y: 0, z: 29 },
+    },
+    match: {
+      status: 'matched',
+      liveIncidentId: 2,
+      jsonEventIndex: 13,
+      distanceM: 1.5,
+      impactDiffKmh: 2,
+    },
+  };
+}
+
 test('renders assistant-style wording without absolute blame', () => {
   const incident = createMatchedCarIncident();
   const message = buildIncidentReportMessage({
@@ -185,7 +236,7 @@ test('skips cleanly when incidents webhook disabled', async () => {
   }
 });
 
-test('processor sends incidents to incident webhook and keeps normal report separate', async (t) => {
+test('processor skips env incidents for the separate incident webhook and keeps normal report separate', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'motassettorr-incident-webhook-'));
   const resultsDir = join(directory, 'results');
   const databasePath = join(directory, 'ac-race-monitor.sqlite');
@@ -276,16 +327,14 @@ test('processor sends incidents to incident webhook and keeps normal report sepa
 
   const result = await processRaceFile(samplePath);
   assert.equal(result, 'processed');
-  assert.equal(fetchCalls.length, 2);
+  assert.equal(fetchCalls.length, 1);
 
   const raceCall = fetchCalls.find((call) => call.url === 'https://discord.example/race');
   const incidentCall = fetchCalls.find((call) => call.url === 'https://discord.example/incidents');
   assert.ok(raceCall);
-  assert.ok(incidentCall);
+  assert.equal(incidentCall, undefined);
   assert.match(raceCall?.body ?? '', /Race Report -/);
   assert.doesNotMatch(raceCall?.body ?? '', /Veredicto sugerido/);
-  assert.match(incidentCall?.body ?? '', /Veredicto sugerido/);
-  assert.match(incidentCall?.body ?? '', /posible golpe con entorno/);
 });
 
 test('grouped incident results in one separate report, not spam', async () => {
@@ -303,6 +352,30 @@ test('grouped incident results in one separate report, not spam', async () => {
       fileName: 'sample-race.json',
       race: createRace(),
       incidents: [createMatchedCarIncident()]
+    });
+
+    assert.equal(result, 'sent');
+    assert.equal(fetchCalls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('sendIncidentReports filters out env incidents and preserves auto-vs-auto reports', async () => {
+  const fetchCalls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    fetchCalls.push(String(input));
+    return new Response(null, { status: 200 });
+  }) as typeof fetch;
+
+  try {
+    const result = await sendIncidentReports({
+      enabled: true,
+      webhookUrl: 'https://discord.example/incidents',
+      fileName: 'sample-race.json',
+      race: createRace(),
+      incidents: [createMatchedEnvIncident(), createMatchedCarIncident()]
     });
 
     assert.equal(result, 'sent');

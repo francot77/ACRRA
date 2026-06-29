@@ -52,13 +52,15 @@ export async function sendIncidentReports(input: SendIncidentReportsInput): Prom
     return 'skipped';
   }
 
-  if (input.incidents.length === 0) {
+  const reportableIncidents = input.incidents.filter(isReportableIncident);
+
+  if (reportableIncidents.length === 0) {
     return 'skipped';
   }
 
   let hadFailure = false;
 
-  for (const incident of input.incidents) {
+  for (const incident of reportableIncidents) {
     const delivery = createIncidentReportDelivery({
       fileName: input.fileName,
       race: input.race,
@@ -89,6 +91,10 @@ export async function sendIncidentReports(input: SendIncidentReportsInput): Prom
   }
 
   return hadFailure ? 'failed' : 'sent';
+}
+
+function isReportableIncident(incident: IncidentReportEntry): boolean {
+  return incident.liveIncident.type === 'collision_with_car';
 }
 
 export function createIncidentReportDelivery(

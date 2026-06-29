@@ -93,9 +93,20 @@ export function analyzeIncidentVerdict(
     trackContextInput,
   });
 
+  const legacyMode: LegacyVerdictMode = trackContextInput ? 'rear_end_only' : 'full';
+  const legacyVerdict = analyzeLegacyVerdict(incident, primaryPreImpact, otherPreImpact, legacyMode);
+
   if (geometry) {
     const facts = deriveGeometryFacts(primaryPreImpact, otherPreImpact, geometry);
     const geometryVerdict = mapGeometryVerdict(incident, geometry, facts);
+    if (geometryVerdict && geometryVerdict.type !== 'unknown') {
+      return geometryVerdict;
+    }
+
+    if (legacyVerdict && shouldRecoverLegacyRearEndVerdict(legacyVerdict, geometry, facts)) {
+      return legacyVerdict;
+    }
+
     if (geometryVerdict) {
       return geometryVerdict;
     }
@@ -105,8 +116,6 @@ export function analyzeIncidentVerdict(
     }
   }
 
-  const legacyMode: LegacyVerdictMode = trackContextInput ? 'rear_end_only' : 'full';
-  const legacyVerdict = analyzeLegacyVerdict(incident, primaryPreImpact, otherPreImpact, legacyMode);
   if (legacyVerdict) {
     return legacyVerdict;
   }
@@ -349,6 +358,33 @@ function mapRearEndVerdict(
   }
 
   return null;
+}
+
+function shouldRecoverLegacyRearEndVerdict(
+  legacyVerdict: IncidentVerdict,
+  geometry: NonNullable<ReturnType<typeof deriveIncidentVerdictGeometry>>,
+  facts: GeometryFacts
+): boolean {
+  if (legacyVerdict.type !== 'possible_rear_end') {
+    return false;
+  }
+
+  const hasBalancedOverlapSignal = facts.overlapRatio >= MIN_SQUEEZE_OVERLAP_RATIO
+    && Math.abs(geometry.pair.closingDeltaKmh) <= MAX_SIMILAR_PACE_DELTA_KMH;
+
+  if (hasBalancedOverlapSignal) {
+    return false;
+  }
+
+  const mixedProjectionWeakOrder = geometry.pair.mixedProjectionSources
+    && Math.abs(geometry.pair.forwardDeltaM) < CAR_LENGTH_M;
+  const overlapWithoutDecisiveLaneClaim = facts.longitudinalOrder === 'car_beside'
+    && facts.primaryInside == null
+    && Math.abs(geometry.pair.closingDeltaKmh) >= MIN_REAR_END_CLOSING_SPEED_KMH;
+
+  return facts.longitudinalOrder === 'unknown'
+    || overlapWithoutDecisiveLaneClaim
+    || mixedProjectionWeakOrder;
 }
 
 function mapSqueezeVerdict(

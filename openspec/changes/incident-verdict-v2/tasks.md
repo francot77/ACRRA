@@ -44,6 +44,6 @@ Chain strategy: pending
 
 ## Phase 4: Verification
 
-- [ ] 4.1 Extend `tests/live/analyzeIncidentVerdict.test.ts` for decisive rear-end fallback, squeeze, divebomb, balanced side-by-side, contradiction downgrade, and null-track `unknown` scenarios from `incident-verdict-analysis`.
+- [x] 4.1 Extend `tests/live/analyzeIncidentVerdict.test.ts` for decisive rear-end fallback, squeeze, divebomb, balanced side-by-side, contradiction downgrade, and null-track `unknown` scenarios from `incident-verdict-analysis`.
 - [ ] 4.2 Add integration coverage around the race-processing path proving verdict dependency injection works with runtime track identity and leaves environment-contact handling unchanged.
-- [ ] 4.3 Run the targeted verdict and track test suites, record expected failures/fixes during apply, and confirm explanations never claim unsupported geometry.
+- [x] 4.3 Run the targeted verdict and track test suites, record expected failures/fixes during apply, and confirm explanations never claim unsupported geometry.
