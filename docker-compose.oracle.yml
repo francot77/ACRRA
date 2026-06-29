@@ -35,3 +35,4 @@ services:
     volumes:
       - ${HOST_ASSETTO_RESULTS_DIR:-/opt/assetto/server/results}:/app/results:ro
       - ${HOST_MONITOR_DATA_DIR:-/opt/ac-race-monitor/data}:/app/data
+      - ./track-models:/app/track-models:ro
