@@ -1,3 +1,5 @@
+import type { TrackContextEnrichment } from '../track/trackTypes';
+
 export type LivePacketKind = 'car_update' | 'collision_with_car' | 'collision_with_env' | 'unknown';
 
 export type KnownLivePacketKind = Exclude<LivePacketKind, 'unknown'>;
@@ -17,6 +19,7 @@ export type LiveCarSnapshot = {
   gear?: number;
   engineRpm?: number;
   normalizedSplinePos?: number;
+  trackContext: TrackContextEnrichment | null;
 };
 
 export type LiveCollisionPacketKind = 'collision_with_car' | 'collision_with_env';
@@ -90,6 +93,7 @@ export type FinalizedLiveIncidentPackage = {
   captureStartMs: number;
   captureEndMs: number;
   anchorPosition: Vector3;
+  trackContext: TrackContextEnrichment | null;
   events: LiveCollisionEvent[];
   cars: LiveIncidentTrackedCar[];
 };

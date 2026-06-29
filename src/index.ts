@@ -8,16 +8,41 @@ import { sendWebhook } from './discord/sendWebhook';
 import { openDatabase } from './db/db';
 import { createRepositories, Repositories } from './db/repositories';
 import { analyzeIncidentVerdict } from './incidents/analyzeIncidentVerdict';
+import type { VerdictTrackContextInput } from './incidents/incidentVerdictGeometry';
 import { startAcUdpClient } from './live/acUdpClient';
 import { extractRaceCollisionEvents, matchLiveIncidentsToRaceEvents } from './live/matchLiveIncidents';
 import { applySafetyRatings } from './parser/calculateSafety';
 import { calculateDriverStats } from './parser/calculateDriverStats';
 import { groupIncidents } from './parser/groupIncidents';
 import { NonRaceSessionError, parseRaceJson } from './parser/parseRaceJson';
+import { loadTrackModelRuntime } from './track/trackModelAdapter';
+import { TrackQueryService } from './track/trackQueryService';
+import type { TrackRuntimeModel } from './track/trackTypes';
 import { ParsedCarCollisionEvent } from './types/assetto';
 import { watchRaceResults } from './watcher';
 
-export function createRaceProcessor(config: AppConfig, repositories: Repositories) {
+type BootstrapRuntime = {
+  trackRuntime: TrackRuntimeModel;
+  database: ReturnType<typeof openDatabase>;
+  repositories: Repositories;
+  processRaceFile: ReturnType<typeof createRaceProcessor>;
+  liveUdpClient: Awaited<ReturnType<typeof startAcUdpClient>> | null;
+  watcher: Awaited<ReturnType<typeof watchRaceResults>>;
+};
+
+type BootstrapDependencies = {
+  loadTrackRuntime?: (config: AppConfig) => TrackRuntimeModel;
+  openDatabase?: typeof openDatabase;
+  createRepositories?: typeof createRepositories;
+  startAcUdpClient?: typeof startAcUdpClient;
+  watchRaceResults?: typeof watchRaceResults;
+};
+
+export function createRaceProcessor(
+  config: AppConfig,
+  repositories: Repositories,
+  verdictTrackInput?: VerdictTrackContextInput
+) {
   return async function processRaceFile(filePath: string): Promise<'processed' | 'duplicate' | 'non-race'> {
     const fileName = basename(filePath);
 
@@ -95,7 +120,7 @@ export function createRaceProcessor(config: AppConfig, repositories: Repositorie
       for (const match of matchResult.matched) {
         const liveIncident = pendingLiveIncidents.find((incident) => incident.id === match.liveIncidentId);
         const jsonIncident = jsonIncidents.find((incident) => incident.eventIndex === match.jsonEventIndex);
-        const verdict = liveIncident ? analyzeIncidentVerdict(liveIncident) : undefined;
+        const verdict = liveIncident ? analyzeIncidentVerdict(liveIncident, verdictTrackInput) : undefined;
         const matchedAt = new Date().toISOString();
         repositories.liveIncidents.markMatched(
           match.liveIncidentId,
@@ -160,27 +185,24 @@ export function createRaceProcessor(config: AppConfig, repositories: Repositorie
 
 export async function main(): Promise<void> {
   const config = loadConfig();
-  const database = openDatabase(config.databasePath);
-  const repositories = createRepositories(database);
-  const processRaceFile = createRaceProcessor(config, repositories);
-  const liveUdpClient = config.liveUdpEnabled
-    ? await startAcUdpClient(config, { logger: log, liveIncidentRepository: repositories.liveIncidents })
-    : null;
-  const watcher = await watchRaceResults({ config, repositories, processFile: processRaceFile });
+  const runtime = await bootstrapApplication(config);
 
   log('info', 'bootstrap', 'AC race monitor started', {
     resultsDir: config.resultsDir,
     watchGlob: config.watchGlob,
     processedFileStrategy: config.processedFileStrategy,
     liveUdpEnabled: config.liveUdpEnabled,
-    liveUdpSmokeGateReady: liveUdpClient?.getStatus().smokeGate.ready ?? false
+    liveUdpSmokeGateReady: runtime.liveUdpClient?.getStatus().smokeGate.ready ?? false,
+    trackModelPath: config.trackModelPath,
+    trackModelTrack: runtime.trackRuntime.track,
+    trackModelLayout: runtime.trackRuntime.layout
   });
 
   const shutdown = async (signal: string): Promise<void> => {
     log('info', 'bootstrap', 'Shutting down AC race monitor', { signal });
-    await liveUdpClient?.close();
-    await watcher.close();
-    database.close();
+    await runtime.liveUdpClient?.close();
+    await runtime.watcher.close();
+    runtime.database.close();
     process.exit(0);
   };
 
@@ -189,6 +211,53 @@ export async function main(): Promise<void> {
   });
   process.once('SIGTERM', () => {
     void shutdown('SIGTERM');
+  });
+}
+
+export async function bootstrapApplication(
+  config: AppConfig,
+  dependencies: BootstrapDependencies = {}
+): Promise<BootstrapRuntime> {
+  const loadTrackRuntime = dependencies.loadTrackRuntime ?? loadTrackContextRuntime;
+  const openDatabaseDependency = dependencies.openDatabase ?? openDatabase;
+  const createRepositoriesDependency = dependencies.createRepositories ?? createRepositories;
+  const startAcUdpClientDependency = dependencies.startAcUdpClient ?? startAcUdpClient;
+  const watchRaceResultsDependency = dependencies.watchRaceResults ?? watchRaceResults;
+
+  const trackRuntime = loadTrackRuntime(config);
+  const database = openDatabaseDependency(config.databasePath);
+  const repositories = createRepositoriesDependency(database);
+  const processRaceFile = createRaceProcessor(config, repositories, {
+    queryService: new TrackQueryService(trackRuntime),
+    sessionTrackIdentity: {
+      trackName: config.trackModelTrack,
+      trackConfig: config.trackModelLayout,
+    },
+  });
+  const liveUdpClient = config.liveUdpEnabled
+    ? await startAcUdpClientDependency(config, {
+        logger: log,
+        liveIncidentRepository: repositories.liveIncidents,
+        trackRuntime,
+      })
+    : null;
+  const watcher = await watchRaceResultsDependency({ config, repositories, processFile: processRaceFile });
+
+  return {
+    trackRuntime,
+    database,
+    repositories,
+    processRaceFile,
+    liveUdpClient,
+    watcher,
+  };
+}
+
+export function loadTrackContextRuntime(config: AppConfig): TrackRuntimeModel {
+  return loadTrackModelRuntime({
+    modelPath: config.trackModelPath,
+    expectedTrack: config.trackModelTrack,
+    expectedLayout: config.trackModelLayout,
   });
 }
 

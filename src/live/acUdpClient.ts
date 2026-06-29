@@ -1,6 +1,8 @@
 import dgram, { Socket } from 'node:dgram';
 import { AppConfig } from '../config';
 import type { Repositories } from '../db/repositories';
+import { TrackQueryService } from '../track/trackQueryService';
+import type { TrackRuntimeModel } from '../track/trackTypes';
 import { LiveIncidentCaptureManager } from './liveIncidentCaptureManager';
 import { LiveSnapshotRecorder } from './liveSnapshotRecorder';
 import { LiveSmokeGate } from './smokeGate';
@@ -26,6 +28,7 @@ export async function startAcUdpClient(
     smokeGate?: LiveSmokeGate;
     snapshotRecorder?: LiveSnapshotRecorder;
     liveIncidentRepository?: Repositories['liveIncidents'];
+    trackRuntime?: TrackRuntimeModel;
   }
 ): Promise<AcUdpClient> {
   const socket = dependencies?.socketFactory?.() ?? dgram.createSocket('udp4');
@@ -33,10 +36,20 @@ export async function startAcUdpClient(
   const smokeGate = dependencies?.smokeGate ?? new LiveSmokeGate();
   const snapshotRecorder = dependencies?.snapshotRecorder ?? new LiveSnapshotRecorder(config.snapshotRingBufferMs);
   const liveIncidentRepository = dependencies?.liveIncidentRepository;
+  const trackContextInput = dependencies?.trackRuntime
+    ? {
+        queryService: new TrackQueryService(dependencies.trackRuntime),
+        sessionTrackIdentity: {
+          trackName: dependencies.trackRuntime.track,
+          trackConfig: dependencies.trackRuntime.layout,
+        },
+      }
+    : undefined;
   const incidentDebug = createIncidentDebugLogger(config, logger, snapshotRecorder);
   const incidentCaptureManager = new LiveIncidentCaptureManager(snapshotRecorder, {
     incidentPreMs: config.incidentPreMs,
     incidentPostMs: config.incidentPostMs,
+    trackContextInput,
     debugLogger: incidentDebug,
     onFinalize: (incident, finalizeDebug) => {
       if (!liveIncidentRepository) {
@@ -102,7 +115,7 @@ export async function startAcUdpClient(
     const stateAfter = smokeGate.observe(packet.type, new Date(packet.receivedAtMs));
 
     if (packet.type === 'car_update') {
-      const snapshot = snapshotRecorder.recordCarUpdate(packet);
+      const snapshot = snapshotRecorder.recordCarUpdate(packet, trackContextInput);
       incidentCaptureManager.observeSnapshot(snapshot);
     } else {
       incidentCaptureManager.observeCollision(toCollisionEvent(packet));

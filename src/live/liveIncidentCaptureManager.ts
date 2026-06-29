@@ -6,6 +6,8 @@ import {
   LiveIncidentTrackedCar,
   Vector3,
 } from './liveTypes';
+import type { TrackIdentityInput, TrackQueryService } from '../track/trackQueryService';
+import type { TrackContextEnrichment } from '../track/trackTypes';
 
 const DEFAULT_GROUPING_WINDOW_MS = 1500;
 const DEFAULT_GROUPING_DISTANCE_METERS = 15;
@@ -16,6 +18,11 @@ type SnapshotSource = {
 };
 
 type IncidentDebugLogger = (message: string, fields: Record<string, unknown>) => void;
+
+type IncidentTrackContextInput = {
+  queryService: TrackQueryService;
+  sessionTrackIdentity: TrackIdentityInput;
+};
 
 type FinalizeDebugContext = {
   postLookupCounts: Record<number, number>;
@@ -46,6 +53,7 @@ export class LiveIncidentCaptureManager {
       incidentPostMs: number;
       groupingWindowMs?: number;
       groupingDistanceMeters?: number;
+      trackContextInput?: IncidentTrackContextInput;
       onFinalize?: (incident: FinalizedLiveIncidentPackage, debug: FinalizeDebugContext) => void;
       debugLogger?: IncidentDebugLogger;
     }
@@ -140,6 +148,7 @@ export class LiveIncidentCaptureManager {
         captureStartMs: incident.captureStartMs,
         captureEndMs: incident.captureEndMs,
         anchorPosition: incident.anchorPosition,
+        trackContext: resolveIncidentTrackContext(incident.anchorPosition, this.config.trackContextInput),
         events: incident.events.slice().sort((left, right) => left.receivedAtMs - right.receivedAtMs),
         cars: Array.from(incident.trackedCars.entries())
           .sort(([left], [right]) => left - right)
@@ -286,6 +295,7 @@ function cloneIncident(incident: FinalizedLiveIncidentPackage): FinalizedLiveInc
   return {
     ...incident,
     anchorPosition: { ...incident.anchorPosition },
+    trackContext: cloneTrackContext(incident.trackContext),
     events: incident.events.map((event) => ({
       ...event,
       worldPosition: { ...event.worldPosition },
@@ -297,7 +307,45 @@ function cloneIncident(incident: FinalizedLiveIncidentPackage): FinalizedLiveInc
         ...snapshot,
         pos: { ...snapshot.pos },
         velocity: { ...snapshot.velocity },
+        trackContext: cloneTrackContext(snapshot.trackContext),
       })),
     })),
   };
+}
+
+function cloneTrackContext(trackContext: TrackContextEnrichment | null): TrackContextEnrichment | null {
+  if (trackContext === null) {
+    return null;
+  }
+
+  return {
+    ...trackContext,
+    center: { ...trackContext.center },
+    forward: { ...trackContext.forward },
+    leftEdge: { ...trackContext.leftEdge },
+    rightEdge: { ...trackContext.rightEdge },
+  };
+}
+
+function resolveIncidentTrackContext(
+  anchorPosition: Vector3,
+  trackContextInput?: IncidentTrackContextInput
+): TrackContextEnrichment | null {
+  if (!trackContextInput) {
+    return null;
+  }
+
+  if (!trackContextInput.queryService.resolveTrack(trackContextInput.sessionTrackIdentity)) {
+    return null;
+  }
+
+  if (!hasFiniteVector(anchorPosition)) {
+    return null;
+  }
+
+  return trackContextInput.queryService.projectByWorldPosition(anchorPosition);
+}
+
+function hasFiniteVector(vector: Vector3): boolean {
+  return Number.isFinite(vector.x) && Number.isFinite(vector.y) && Number.isFinite(vector.z);
 }

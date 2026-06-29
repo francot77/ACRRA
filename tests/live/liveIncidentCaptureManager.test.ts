@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 import { LiveIncidentCaptureManager } from '../../src/live/liveIncidentCaptureManager';
 import { LiveSnapshotRecorder } from '../../src/live/liveSnapshotRecorder';
 import { LiveCarUpdatePacket, LiveCollisionEvent, LiveCollisionWithCarPacket, LiveCollisionWithEnvPacket } from '../../src/live/liveTypes';
+import { parseTrackModelRuntime } from '../../src/track/trackModelAdapter';
+import { TrackQueryService } from '../../src/track/trackQueryService';
 
 test('car-car incident captures pre and post snapshots for both cars', () => {
   const recorder = new LiveSnapshotRecorder(10000, () => 10000);
@@ -28,6 +32,7 @@ test('car-car incident captures pre and post snapshots for both cars', () => {
 
   const incident = incidents[0]!;
   assert.equal(incident.type, 'collision_with_car');
+  assert.equal(incident.trackContext, null);
   assert.deepEqual(incident.events.map((event) => event.receivedAtMs), [3500]);
   assert.deepEqual(incident.cars.map((car) => ({ carId: car.carId, snapshots: car.snapshots.map((snapshot) => snapshot.receivedAtMs) })), [
     { carId: 7, snapshots: [1000, 2200, 4000, 5000] },
@@ -80,6 +85,77 @@ test('repeated grouped collisions produce one finalized incident package', () =>
   assert.equal(incidents[0]?.captureEndMs, 5700);
 });
 
+test('incident finalization projects anchor track context and preserves snapshot enrichment', () => {
+  const recorder = new LiveSnapshotRecorder(10000, () => 10000);
+  const queryService = new TrackQueryService(loadMonzaRuntime());
+  const trackContextInput = {
+    queryService,
+    sessionTrackIdentity: { trackName: 'monza', trackConfig: null },
+  };
+  const captureManager = new LiveIncidentCaptureManager(recorder, {
+    incidentPreMs: 3000,
+    incidentPostMs: 1500,
+    trackContextInput,
+  });
+
+  recorder.recordCarUpdate(
+    createCarUpdatePacket({ carId: 7, receivedAt: toIso(1000), normalizedSplinePos: 0 }),
+    trackContextInput
+  );
+  recorder.recordCarUpdate(
+    createCarUpdatePacket({ carId: 8, receivedAt: toIso(1200), normalizedSplinePos: 0.0004 }),
+    trackContextInput
+  );
+
+  captureManager.observeCollision(
+    createCarCollisionEvent({
+      receivedAtMs: 3000,
+      carId: 7,
+      otherCarId: 8,
+      worldPosition: { x: -206.929398, y: -8.408029, z: 414.00296 },
+    })
+  );
+
+  captureManager.observeSnapshot(
+    recorder.recordCarUpdate(createCarUpdatePacket({ carId: 7, receivedAt: toIso(3500), normalizedSplinePos: 0.001 }), trackContextInput)
+  );
+  captureManager.observeSnapshot(
+    recorder.recordCarUpdate(createCarUpdatePacket({ carId: 8, receivedAt: toIso(3600), normalizedSplinePos: 0.0012 }), trackContextInput)
+  );
+
+  const incidents = captureManager.getFinalizedIncidents(4501);
+  const incident = incidents[0];
+
+  assert.equal(incidents.length, 1);
+  assert.equal(incident?.trackContext?.source, 'world_position');
+  assert.equal(incident?.trackContext?.index, 0);
+  assert.equal(incident?.cars[0]?.snapshots[0]?.trackContext?.source, 'progress');
+  assert.equal(incident?.cars[1]?.snapshots[0]?.trackContext?.source, 'progress');
+});
+
+test('incident finalization leaves track context null when projection input is unavailable', () => {
+  const recorder = new LiveSnapshotRecorder(10000, () => 10000);
+  const queryService = new TrackQueryService(loadMonzaRuntime());
+  const captureManager = new LiveIncidentCaptureManager(recorder, {
+    incidentPreMs: 3000,
+    incidentPostMs: 1500,
+    trackContextInput: {
+      queryService,
+      sessionTrackIdentity: { trackName: 'spa', trackConfig: null },
+    },
+  });
+
+  captureManager.observeCollision(
+    createCarCollisionEvent({
+      receivedAtMs: 3000,
+      worldPosition: { x: Number.NaN, y: 0, z: 0 },
+    })
+  );
+
+  const incidents = captureManager.getFinalizedIncidents(4501);
+  assert.equal(incidents[0]?.trackContext, null);
+});
+
 function createCarUpdatePacket(overrides: Partial<LiveCarUpdatePacket> = {}): LiveCarUpdatePacket {
   const receivedAt = overrides.receivedAt ?? toIso(0);
   const receivedAtMs = overrides.receivedAtMs ?? Date.parse(receivedAt);
@@ -129,4 +205,8 @@ function createEnvCollisionEvent(overrides: Partial<LiveCollisionWithEnvPacket &
 
 function toIso(ms: number): string {
   return new Date(ms).toISOString();
+}
+
+function loadMonzaRuntime() {
+  return parseTrackModelRuntime(JSON.parse(readFileSync(resolve('track-models/monza/track-model.json'), 'utf8')));
 }

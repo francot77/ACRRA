@@ -70,6 +70,7 @@ function createSnapshot(overrides: Partial<LiveCarSnapshot> = {}): LiveCarSnapsh
     gear: 4,
     engineRpm: 6123,
     normalizedSplinePos: 0.625,
+    trackContext: null,
     ...overrides,
   };
 }

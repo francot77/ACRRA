@@ -157,6 +157,9 @@ function createConfig(databasePath: string): AppConfig {
   return {
     resultsDir: '/app/results',
     databasePath,
+    trackModelPath: '/app/track-models/monza/track-model.json',
+    trackModelTrack: 'monza',
+    trackModelLayout: null,
     discordWebhookUrl: '',
     incidentsDiscordWebhookUrl: '',
     incidentsWebhookEnabled: false,

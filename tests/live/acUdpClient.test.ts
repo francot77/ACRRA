@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 import type { RemoteInfo, Socket } from 'node:dgram';
 import type { AppConfig } from '../../src/config';
 import { startAcUdpClient, type LiveLogger } from '../../src/live/acUdpClient';
+import { parseTrackModelRuntime } from '../../src/track/trackModelAdapter';
 
 test('acUdpClient uses the real realtime enable packet and logs real packet semantics when live UDP debug is enabled', async () => {
   const socket = new FakeSocket();
@@ -30,6 +33,7 @@ test('acUdpClient uses the real realtime enable packet and logs real packet sema
   const recordedSnapshots = client.getSnapshots(7, 0, Number.MAX_SAFE_INTEGER);
   assert.equal(recordedSnapshots.length, 1);
   assert.equal(recordedSnapshots[0]?.speedKmh, 36);
+  assert.equal(recordedSnapshots[0]?.trackContext, null);
   assert.deepEqual(client.getFinalizedIncidents(), []);
 
   assert.deepEqual(packetLogs[0]?.fields, {
@@ -105,6 +109,29 @@ test('acUdpClient suppresses per-packet logs when live UDP debug is disabled', a
   await client.close();
 });
 
+test('acUdpClient wires optional track runtime into snapshot and incident enrichment without changing fallbacks', async () => {
+  const socket = new FakeSocket();
+
+  const client = await startAcUdpClient(createConfig({ incidentPostMs: 1 }), {
+    socketFactory: () => socket as unknown as Socket,
+    logger: () => undefined,
+    trackRuntime: loadMonzaRuntime(),
+  });
+
+  socket.emitMessage(createCarUpdatePacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 33 });
+  socket.emitMessage(createCollisionWithEnvPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 31 });
+
+  await sleep(10);
+
+  const snapshots = client.getSnapshots(7, 0, Number.MAX_SAFE_INTEGER);
+  const incidents = client.getFinalizedIncidents();
+
+  assert.equal(snapshots[0]?.trackContext?.source, 'progress');
+  assert.equal(incidents[0]?.trackContext?.source, 'world_position');
+
+  await client.close();
+});
+
 class FakeSocket extends EventEmitter {
   readonly sentPackets: Array<{ payload: Buffer; port: number; host: string }> = [];
 
@@ -130,6 +157,9 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     resultsDir: '/app/results',
     databasePath: '/app/data/ac-race-monitor.sqlite',
+    trackModelPath: '/app/track-models/monza/track-model.json',
+    trackModelTrack: 'monza',
+    trackModelLayout: null,
     discordWebhookUrl: '',
     incidentsDiscordWebhookUrl: '',
     incidentsWebhookEnabled: false,
@@ -203,4 +233,12 @@ function createCollisionWithEnvPacket(): Buffer {
   raw.writeFloatLE(0, 23);
   raw.writeFloatLE(-1.25, 27);
   return raw;
+}
+
+function loadMonzaRuntime() {
+  return parseTrackModelRuntime(JSON.parse(readFileSync(resolve('track-models/monza/track-model.json'), 'utf8')));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 }

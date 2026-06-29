@@ -3,6 +3,9 @@ import { z } from 'zod';
 const envSchema = z.object({
   RESULTS_DIR: z.string().default('/app/results'),
   DATABASE_PATH: z.string().default('/app/data/ac-race-monitor.sqlite'),
+  TRACK_MODEL_PATH: z.string().default('track-models/monza/track-model.json'),
+  TRACK_MODEL_TRACK: z.string().default('monza'),
+  TRACK_MODEL_LAYOUT: z.string().default(''),
   DISCORD_WEBHOOK_URL: z.string().default(''),
   INCIDENTS_DISCORD_WEBHOOK_URL: z.string().default(''),
   INCIDENTS_WEBHOOK_ENABLED: z.enum(['true', 'false']).default('false'),
@@ -32,6 +35,9 @@ const envSchema = z.object({
 export type AppConfig = {
   resultsDir: string;
   databasePath: string;
+  trackModelPath: string;
+  trackModelTrack: string;
+  trackModelLayout: string | null;
   discordWebhookUrl: string;
   incidentsDiscordWebhookUrl: string;
   incidentsWebhookEnabled: boolean;
@@ -64,6 +70,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     resultsDir: parsed.RESULTS_DIR,
     databasePath: parsed.DATABASE_PATH,
+    trackModelPath: parsed.TRACK_MODEL_PATH,
+    trackModelTrack: parsed.TRACK_MODEL_TRACK,
+    trackModelLayout: normalizeTrackModelLayout(parsed.TRACK_MODEL_LAYOUT),
     discordWebhookUrl: parsed.DISCORD_WEBHOOK_URL,
     incidentsDiscordWebhookUrl: parsed.INCIDENTS_DISCORD_WEBHOOK_URL,
     incidentsWebhookEnabled: parsed.INCIDENTS_WEBHOOK_ENABLED === 'true',
@@ -89,4 +98,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     nuclearMissileMinCarImpactKmh: parsed.NUCLEAR_MISSILE_MIN_CAR_IMPACT_KMH,
     nodeEnv: parsed.NODE_ENV
   };
+}
+
+function normalizeTrackModelLayout(layout: string): string | null {
+  const normalized = layout.trim();
+  return normalized === '' ? null : normalized;
 }
