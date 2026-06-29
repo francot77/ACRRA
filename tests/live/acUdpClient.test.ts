@@ -109,6 +109,51 @@ test('acUdpClient suppresses per-packet logs when live UDP debug is disabled', a
   await client.close();
 });
 
+test('acUdpClient aggregates per-window packet counts in the incident debug summary without per-packet spam', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'] });
+  t.mock.timers.setTime(0);
+
+  const socket = new FakeSocket();
+  const logs: Array<{ level: string; component: string; message: string; fields: Record<string, unknown> }> = [];
+  const logger: LiveLogger = (level, component, message, fields) => {
+    logs.push({ level, component, message, fields });
+  };
+
+  const client = await startAcUdpClient(createConfig({ liveUdpDebug: false, incidentDebug: true }), {
+    socketFactory: () => socket as unknown as Socket,
+    logger,
+  });
+
+  socket.emitMessage(createCarUpdatePacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 33 });
+
+  t.mock.timers.tick(1000);
+  socket.emitMessage(createCarUpdatePacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 33 });
+  socket.emitMessage(createCollisionWithCarPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 32 });
+  socket.emitMessage(createUnknownPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 4 });
+
+  t.mock.timers.tick(4000);
+  socket.emitMessage(createCollisionWithEnvPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 31 });
+
+  const packetLogs = logs.filter((entry) => entry.message === 'Received live UDP packet');
+  assert.equal(packetLogs.length, 0);
+
+  const summaryLogs = logs.filter((entry) => entry.message === 'Live incident debug summary');
+  assert.equal(summaryLogs.length, 2);
+  assert.deepEqual(summaryLogs[1]?.fields, {
+    ts: '1970-01-01T00:00:05.000Z',
+    ringBufferCarIds: [7],
+    pendingIncidentCount: 1,
+    finalizedIncidentCount: 1,
+    windowPacketCount: 4,
+    windowCarUpdateCount: 1,
+    windowCollisionWithCarCount: 1,
+    windowCollisionWithEnvCount: 1,
+    windowUnknownPacketCount: 1,
+  });
+
+  await client.close();
+});
+
 test('acUdpClient wires optional track runtime into snapshot and incident enrichment without changing fallbacks', async () => {
   const socket = new FakeSocket();
 
@@ -233,6 +278,10 @@ function createCollisionWithEnvPacket(): Buffer {
   raw.writeFloatLE(0, 23);
   raw.writeFloatLE(-1.25, 27);
   return raw;
+}
+
+function createUnknownPacket(): Buffer {
+  return Buffer.from([0xde, 0xad, 0xbe, 0xef]);
 }
 
 function loadMonzaRuntime() {

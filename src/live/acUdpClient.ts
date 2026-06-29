@@ -99,6 +99,7 @@ export async function startAcUdpClient(
 
   socket.on('message', (rawMessage, remote) => {
     const packet = parseAcUdpPacket(rawMessage);
+    incidentDebug.observePacket(packet.type);
 
     if (packet.type === 'unknown') {
       logger('warn', 'live-udp', 'Received unknown live UDP packet', {
@@ -108,6 +109,7 @@ export async function startAcUdpClient(
         previewHex: packet.previewHex,
         previewText: packet.previewText
       });
+      incidentDebug.maybeLogSummary(packet.receivedAtMs, incidentCaptureManager);
       return;
     }
 
@@ -286,6 +288,7 @@ function toCollisionEvent(packet: Exclude<AcLivePacket, { type: 'car_update' | '
 }
 
 type IncidentDebugLoggerFn = ((message: string, fields: Record<string, unknown>) => void) & {
+  observePacket: (packetType: AcLivePacket['type']) => void;
   maybeLogSummary: (nowMs: number, incidentCaptureManager: LiveIncidentCaptureManager) => void;
 };
 
@@ -296,6 +299,11 @@ function createIncidentDebugLogger(
 ): IncidentDebugLoggerFn {
   let nextSummaryAtMs = 0;
   const summaryIntervalMs = 5000;
+  let windowPacketCount = 0;
+  let windowCarUpdateCount = 0;
+  let windowCollisionWithCarCount = 0;
+  let windowCollisionWithEnvCount = 0;
+  let windowUnknownPacketCount = 0;
 
   const debugLogger = ((message: string, fields: Record<string, unknown>) => {
     if (!config.incidentDebug) {
@@ -304,6 +312,31 @@ function createIncidentDebugLogger(
 
     logger('info', 'live-incident-debug', message, fields);
   }) as IncidentDebugLoggerFn;
+
+  debugLogger.observePacket = (packetType) => {
+    if (!config.incidentDebug) {
+      return;
+    }
+
+    windowPacketCount += 1;
+
+    if (packetType === 'car_update') {
+      windowCarUpdateCount += 1;
+      return;
+    }
+
+    if (packetType === 'collision_with_car') {
+      windowCollisionWithCarCount += 1;
+      return;
+    }
+
+    if (packetType === 'collision_with_env') {
+      windowCollisionWithEnvCount += 1;
+      return;
+    }
+
+    windowUnknownPacketCount += 1;
+  };
 
   debugLogger.maybeLogSummary = (nowMs, incidentCaptureManager) => {
     if (!config.incidentDebug || nowMs < nextSummaryAtMs) {
@@ -316,7 +349,18 @@ function createIncidentDebugLogger(
       ringBufferCarIds: snapshotRecorder.getTrackedCarIds(),
       pendingIncidentCount: incidentCaptureManager.getPendingIncidentCount(nowMs),
       finalizedIncidentCount: incidentCaptureManager.getFinalizedIncidentCount(nowMs),
+      windowPacketCount,
+      windowCarUpdateCount,
+      windowCollisionWithCarCount,
+      windowCollisionWithEnvCount,
+      windowUnknownPacketCount,
     });
+
+    windowPacketCount = 0;
+    windowCarUpdateCount = 0;
+    windowCollisionWithCarCount = 0;
+    windowCollisionWithEnvCount = 0;
+    windowUnknownPacketCount = 0;
   };
 
   return debugLogger;
