@@ -96,6 +96,23 @@ test('live telemetry stays out of SQLite until the incident package is finalized
   assert.equal(incidents[0]?.snapshots.length, 2);
 });
 
+test('finalized incidents with zero captured snapshots are not persisted into SQLite', async (t) => {
+  const context = await createLiveContext();
+  t.after(async () => {
+    await context.client.close();
+    context.database.close();
+  });
+
+  context.socket.emitMessage(createCollisionWithEnvPacket({ carId: 9, impactSpeed: 41.75 }), fakeRemote());
+  await sleep(40);
+
+  const finalized = context.client.getFinalizedIncidents();
+
+  assert.equal(finalized.length, 1);
+  assert.equal(finalized[0]?.cars.reduce((count, car) => count + car.snapshots.length, 0), 0);
+  assert.deepEqual(context.repositories.liveIncidents.list(), []);
+});
+
 test('restarting the UDP client does not collide incident UIDs with previously persisted incidents', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'motassettorr-live-incident-restart-'));
   const database = openDatabase(join(directory, 'ac-race-monitor.sqlite'));

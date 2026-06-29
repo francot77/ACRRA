@@ -53,6 +53,26 @@ export async function startAcUdpClient(
     trackContextInput,
     debugLogger: incidentDebug,
     onFinalize: (incident, finalizeDebug) => {
+      if (finalizeDebug.totalSnapshotCount === 0) {
+        logger('warn', 'live-udp', 'Skipped finalized live incident persistence because no snapshots were captured', {
+          incidentUid: incident.incidentId,
+          incidentType: incident.type,
+          trackedCars: incident.cars.map((car) => car.carId),
+          eventCount: incident.events.length,
+          snapshotCount: 0,
+          persistenceStatus: 'skipped_zero_snapshots',
+        });
+        incidentDebug('Skipped finalized live incident persistence', {
+          incidentUid: incident.incidentId,
+          incidentType: incident.type,
+          postLookupCounts: finalizeDebug.postLookupCounts,
+          totalPersistedCount: 0,
+          persistenceStatus: 'skipped_zero_snapshots',
+          reason: 'No snapshots found inside capture window',
+        });
+        return;
+      }
+
       if (!liveIncidentRepository) {
         incidentDebug('Skipped live incident persistence because repository is unavailable', {
           incidentUid: incident.incidentId,
