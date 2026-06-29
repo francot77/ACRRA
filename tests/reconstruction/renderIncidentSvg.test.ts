@@ -24,12 +24,16 @@ test('createIncidentArtifacts packages gif and omits it when budget is exceeded'
 
   const ready = createIncidentArtifacts({ scene });
   assert.equal(ready.delivery, 'sequence_ready');
+  assert.equal(ready.staticSvg?.filename, 'incident.svg');
+  assert.equal(ready.staticSvg?.contentType, 'image/svg+xml');
+  assert.match(ready.staticSvg?.bytes.toString('utf8') ?? '', /Incident tactical reconstruction/);
   assert.equal(ready.animationGif?.filename, 'incident.gif');
   assert.equal(ready.animationGif?.contentType, 'image/gif');
   assert.equal(ready.animationGif?.bytes.subarray(0, 6).toString('ascii'), 'GIF89a');
 
   const omitted = createIncidentArtifacts({ scene, maxGifBytes: 24 });
   assert.equal(omitted.delivery, 'omitted');
+  assert.equal(omitted.staticSvg?.filename, 'incident.svg');
   assert.equal(omitted.animationGif, undefined);
   assert.ok(omitted.notes.some((note) => note.includes('incident.gif omitted')));
 });

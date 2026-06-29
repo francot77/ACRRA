@@ -92,6 +92,13 @@ export type RenderedIncidentSvg = Readonly<{
 
 export type IncidentVisualArtifacts = Readonly<{
   delivery: IncidentReconstructionDeliveryState;
+  staticSvg?: {
+    filename: string;
+    contentType: 'image/svg+xml';
+    bytes: Buffer;
+    width: number;
+    height: number;
+  };
   animationGif?: {
     filename: string;
     contentType: 'image/gif';

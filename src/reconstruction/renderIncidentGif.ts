@@ -6,6 +6,8 @@ const PADDING_X = 28;
 const PADDING_Y = 24;
 const FOOTER_HEIGHT = 18;
 const FRAME_DELAY_CS = 12;
+const GIF_MIN_CODE_SIZE = 8;
+const GIF_LITERAL_RUN_LIMIT = 250;
 
 const PALETTE = [
   [15, 23, 42],
@@ -25,6 +27,8 @@ const PALETTE = [
   [59, 130, 246],
   [250, 250, 250],
 ] as const;
+
+const GLOBAL_COLOR_TABLE = createGlobalColorTable();
 
 const COLOR = {
   background: 0,
@@ -46,7 +50,7 @@ const COLOR = {
 
 export function renderIncidentGif(scene: IncidentScene, frames: readonly IncidentSceneFrame[]): Buffer {
   const normalizedFrames = frames.length > 0 ? frames : [buildFallbackFrame(scene)];
-  const encoder = new GifEncoder(WIDTH, HEIGHT, createGlobalColorTable());
+  const encoder = new GifEncoder(WIDTH, HEIGHT, GLOBAL_COLOR_TABLE);
 
   for (const frame of normalizedFrames) {
     const pixels = new Uint8Array(WIDTH * HEIGHT);
@@ -315,6 +319,7 @@ function createGlobalColorTable(): Uint8Array {
 
 class GifEncoder {
   private readonly chunks: number[] = [];
+  private readonly minCodeSize = GIF_MIN_CODE_SIZE;
 
   constructor(width: number, height: number, globalColorTable: Uint8Array) {
     writeAscii(this.chunks, 'GIF89a');
@@ -328,7 +333,7 @@ class GifEncoder {
   }
 
   addFrame(indexedPixels: Uint8Array, delayCentiseconds: number): void {
-    this.chunks.push(0x21, 0xf9, 0x04, 0x04);
+    this.chunks.push(0x21, 0xf9, 0x04, 0x08);
     writeShort(this.chunks, delayCentiseconds);
     this.chunks.push(0x00, 0x00);
     this.chunks.push(0x2c);
@@ -338,9 +343,8 @@ class GifEncoder {
     writeShort(this.chunks, HEIGHT);
     this.chunks.push(0x00);
 
-    const minCodeSize = 8;
-    this.chunks.push(minCodeSize);
-    const compressed = lzwEncode(indexedPixels, minCodeSize);
+    this.chunks.push(this.minCodeSize);
+    const compressed = encodeGifImageData(indexedPixels, this.minCodeSize);
     for (let offset = 0; offset < compressed.length; offset += 255) {
       const block = compressed.subarray(offset, offset + 255);
       this.chunks.push(block.length, ...block);
@@ -353,15 +357,11 @@ class GifEncoder {
   }
 }
 
-function lzwEncode(pixels: Uint8Array, minCodeSize: number): Uint8Array {
+function encodeGifImageData(pixels: Uint8Array, minCodeSize: number): Uint8Array {
   const clearCode = 1 << minCodeSize;
   const endCode = clearCode + 1;
-  let codeSize = minCodeSize + 1;
-  let nextCode = endCode + 1;
-  let dictionary = new Map<string, number>();
-  for (let index = 0; index < clearCode; index += 1) {
-    dictionary.set(String.fromCharCode(index), index);
-  }
+  const codeSize = minCodeSize + 1;
+  let literalRun = 0;
 
   const outputBits: number[] = [];
   const writeCode = (code: number) => {
@@ -371,36 +371,20 @@ function lzwEncode(pixels: Uint8Array, minCodeSize: number): Uint8Array {
   };
 
   writeCode(clearCode);
-  let sequence = String.fromCharCode(pixels[0] ?? 0);
-
-  for (let index = 1; index < pixels.length; index += 1) {
-    const symbol = String.fromCharCode(pixels[index]!);
-    const candidate = sequence + symbol;
-    if (dictionary.has(candidate)) {
-      sequence = candidate;
-      continue;
+  for (const pixel of pixels) {
+    if (pixel >= clearCode) {
+      throw new Error(`GIF palette index ${pixel} exceeded max literal ${clearCode - 1}`);
     }
 
-    writeCode(dictionary.get(sequence)!);
-    if (nextCode < 4096) {
-      dictionary.set(candidate, nextCode);
-      nextCode += 1;
-      if (nextCode === (1 << codeSize) && codeSize < 12) {
-        codeSize += 1;
-      }
-    } else {
+    if (literalRun >= GIF_LITERAL_RUN_LIMIT) {
       writeCode(clearCode);
-      dictionary = new Map<string, number>();
-      for (let reset = 0; reset < clearCode; reset += 1) {
-        dictionary.set(String.fromCharCode(reset), reset);
-      }
-      codeSize = minCodeSize + 1;
-      nextCode = endCode + 1;
+      literalRun = 0;
     }
-    sequence = symbol;
+
+    writeCode(pixel);
+    literalRun += 1;
   }
 
-  writeCode(dictionary.get(sequence)!);
   writeCode(endCode);
 
   const bytes = new Uint8Array(Math.ceil(outputBits.length / 8));
