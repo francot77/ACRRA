@@ -43,6 +43,7 @@ function createScene(range: { startMs: number; endMs: number }): IncidentScene {
       lateralHalfWidthM: 12,
       widthM: 10,
       turnSide: 'straight',
+      trackPath: Object.freeze([]),
     }),
     cars: Object.freeze([
       Object.freeze({

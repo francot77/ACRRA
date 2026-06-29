@@ -49,6 +49,15 @@ export type IncidentSceneCorridor = Readonly<{
   lateralHalfWidthM: number;
   widthM: number | null;
   turnSide: IncidentSceneTurnSide;
+  trackPath: readonly IncidentSceneTrackSample[];
+}>;
+
+export type IncidentSceneTrackSample = Readonly<{
+  trackIndex: number;
+  forwardM: number;
+  centerLateralM: number;
+  leftLateralM: number;
+  rightLateralM: number;
 }>;
 
 export type IncidentScene = Readonly<{
@@ -83,9 +92,9 @@ export type RenderedIncidentSvg = Readonly<{
 
 export type IncidentVisualArtifacts = Readonly<{
   delivery: IncidentReconstructionDeliveryState;
-  staticSvg?: {
+  animationGif?: {
     filename: string;
-    contentType: 'image/svg+xml';
+    contentType: 'image/gif';
     bytes: Buffer;
   };
   frames: readonly IncidentSceneFrame[];

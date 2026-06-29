@@ -25,6 +25,7 @@ test('buildIncidentReconstruction assembles a bounded local scene with involved 
   assert.equal(scene.anchorCarId, 7);
   assert.equal(scene.anchorRelativeMs, 0);
   assert.equal(scene.corridor.anchorIndex, 0);
+  assert.ok(scene.corridor.trackPath.length >= 2);
   assert.equal(scene.cars.map((car) => car.carId).join(','), '7,8,99');
 
   const fallbackCar = scene.cars.find((car) => car.carId === 8);
@@ -62,6 +63,7 @@ test('buildIncidentReconstruction stays null-safe when anchor reprojection canno
 
   assert.equal(scene.anchorEvidence.state, 'missing');
   assert.equal(scene.corridor.anchorIndex, null);
+  assert.equal(scene.corridor.trackPath.length, 0);
   assert.equal(scene.cars.length, 2);
 
   const primaryCar = scene.cars.find((car) => car.carId === 7);

@@ -6,6 +6,7 @@ import type {
   IncidentSceneCar,
   IncidentSceneCorridor,
   IncidentScenePlacement,
+  IncidentSceneTrackSample,
   ReconstructionEvidence,
   ReconstructionProjectionSource,
 } from './reconstructionTypes';
@@ -36,7 +37,12 @@ export function buildIncidentReconstruction(input: BuildIncidentReconstructionIn
   const validTrackInput = hasValidTrackInput(input.trackContextInput);
   const anchor = resolveSceneAnchor(input.incident, involvedCarIds, validTrackInput ? input.trackContextInput : undefined);
   const localFrame = anchor.context ? createLocalFrame(anchor.context, input.trackContextInput) : null;
-  const corridor = createCorridor(anchor.context, localFrame?.turnSide ?? 'straight');
+  const corridor = withTrackPath(
+    createCorridor(anchor.context, localFrame?.turnSide ?? 'straight'),
+    anchor.context,
+    localFrame,
+    validTrackInput ? input.trackContextInput : undefined,
+  );
   const cars = buildSceneCars(input.incident, involvedCarIds, anchor, corridor, localFrame, validTrackInput ? input.trackContextInput : undefined);
   const notes = buildSceneNotes(anchor.evidence, cars);
 
@@ -183,6 +189,44 @@ function createCorridor(anchorContext: ResolvedPlacementContext | null, turnSide
     lateralHalfWidthM: Math.max(anchorContext?.trackContext.width ?? 0, DEFAULT_LATERAL_HALF_WIDTH_M),
     widthM,
     turnSide,
+    trackPath: Object.freeze([]),
+  });
+}
+
+function withTrackPath(
+  corridor: IncidentSceneCorridor,
+  anchorContext: ResolvedPlacementContext | null,
+  localFrame: { forwardAxis: { x: number; y: number; z: number }; lateralAxis: { x: number; y: number; z: number } } | null,
+  trackContextInput?: ReconstructionTrackContextInput,
+): IncidentSceneCorridor {
+  if (!anchorContext || !localFrame || !trackContextInput) {
+    return corridor;
+  }
+
+  const samples = trackContextInput.queryService.getPointsAround(
+    anchorContext.trackContext.index,
+    corridor.backwardRangeM + 10,
+    corridor.forwardRangeM + 10,
+  ).points
+    .map((point) => {
+      const centerDelta = subtractVectors(point.center, anchorContext.trackContext.center);
+      const leftDelta = subtractVectors(point.leftEdge, anchorContext.trackContext.center);
+      const rightDelta = subtractVectors(point.rightEdge, anchorContext.trackContext.center);
+
+      return Object.freeze({
+        trackIndex: point.index,
+        forwardM: dotProduct(centerDelta, localFrame.forwardAxis),
+        centerLateralM: dotProduct(centerDelta, localFrame.lateralAxis),
+        leftLateralM: dotProduct(leftDelta, localFrame.lateralAxis),
+        rightLateralM: dotProduct(rightDelta, localFrame.lateralAxis),
+      } satisfies IncidentSceneTrackSample);
+    })
+    .filter((sample) => sample.forwardM >= -(corridor.backwardRangeM + 10) && sample.forwardM <= corridor.forwardRangeM + 10)
+    .sort((left, right) => left.forwardM - right.forwardM);
+
+  return Object.freeze({
+    ...corridor,
+    trackPath: Object.freeze(samples),
   });
 }
 

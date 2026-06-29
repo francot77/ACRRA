@@ -312,7 +312,7 @@ test('grouped incident results in one separate report, not spam', async () => {
   }
 });
 
-test('createIncidentReportDelivery attaches incident.svg and visual metadata when reconstruction succeeds', () => {
+test('createIncidentReportDelivery attaches incident.gif and visual metadata when reconstruction succeeds', () => {
   const incident = createMatchedCarIncident();
   const delivery = createIncidentReportDelivery({
     fileName: 'sample-race.json',
@@ -323,15 +323,15 @@ test('createIncidentReportDelivery attaches incident.svg and visual metadata whe
     reconstructionTrackContext: createReconstructionTrackContext(),
   });
 
-  assert.equal(delivery.primaryMessage.attachments?.[0]?.filename, 'incident.svg');
+  assert.equal(delivery.primaryMessage.attachments?.[0]?.filename, 'incident.gif');
   const visualField = delivery.primaryMessage.webhookBody.embeds[0]?.fields.find((field) => field.name === 'Reconstrucción visual');
   assert.match(visualField?.value ?? '', /Estado: sequence_ready/);
-  assert.match(visualField?.value ?? '', /Adjunto SVG: sí/);
+  assert.match(visualField?.value ?? '', /Adjunto GIF: sí/);
   assert.equal(delivery.fallbackMessage?.attachments, undefined);
   assert.match(delivery.fallbackMessage?.summaryText ?? '', /upload failed/);
 });
 
-test('createIncidentReportDelivery keeps text-only message when artifact budget omits the svg', () => {
+test('createIncidentReportDelivery keeps text-only message when artifact budget omits the gif', () => {
   const incident = createMatchedCarIncident();
   const delivery = createIncidentReportDelivery(
     {
@@ -346,7 +346,7 @@ test('createIncidentReportDelivery keeps text-only message when artifact budget 
       buildArtifacts: ({ scene }) => ({
         delivery: 'omitted',
         frames: [{ atRelativeMs: 0, source: 'observed', cars: [] }],
-        notes: [...scene.notes, 'incident.svg omitted because 999999 bytes exceeded local budget 131072'],
+        notes: [...scene.notes, 'incident.gif omitted because 999999 bytes exceeded local budget 131072'],
       }),
     }
   );
@@ -354,7 +354,7 @@ test('createIncidentReportDelivery keeps text-only message when artifact budget 
   assert.equal(delivery.primaryMessage.attachments, undefined);
   assert.equal(delivery.fallbackMessage, undefined);
   assert.match(delivery.primaryMessage.summaryText, /Estado: omitted/);
-  assert.match(delivery.primaryMessage.summaryText, /incident\.svg omitted/);
+  assert.match(delivery.primaryMessage.summaryText, /incident\.gif omitted/);
 });
 
 test('sendIncidentReports retries text-only delivery after multipart webhook failure', async () => {

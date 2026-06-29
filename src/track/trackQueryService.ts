@@ -11,6 +11,10 @@ export type TrackPointNeighbors = Readonly<{
   next: TrackRuntimePoint;
 }>;
 
+export type TrackPointWindow = Readonly<{
+  points: readonly TrackRuntimePoint[];
+}>;
+
 export class TrackQueryService {
   constructor(private readonly runtime: TrackRuntimeModel) {
     if (runtime.points.length === 0) {
@@ -50,6 +54,49 @@ export class TrackQueryService {
 
     return Object.freeze({ previous, current, next });
   }
+
+  getPointsAround(index: number, backwardMeters: number, forwardMeters: number): TrackPointWindow {
+    const pointIndex = this.runtime.points.findIndex((candidate) => candidate.index === index);
+
+    if (pointIndex === -1) {
+      throw new Error(`Track runtime point ${index} was not found`);
+    }
+
+    const selected = new Map<number, TrackRuntimePoint>();
+    const anchor = this.runtime.points[pointIndex]!;
+    selected.set(anchor.index, anchor);
+
+    let traveled = 0;
+    let cursor = pointIndex;
+    while (traveled < backwardMeters) {
+      const previousIndex = (cursor - 1 + this.runtime.points.length) % this.runtime.points.length;
+      const current = this.runtime.points[cursor]!;
+      const previous = this.runtime.points[previousIndex]!;
+      traveled += distanceBetween(previous.center, current.center);
+      selected.set(previous.index, previous);
+      cursor = previousIndex;
+      if (cursor === pointIndex) {
+        break;
+      }
+    }
+
+    traveled = 0;
+    cursor = pointIndex;
+    while (traveled < forwardMeters) {
+      const nextIndex = (cursor + 1) % this.runtime.points.length;
+      const current = this.runtime.points[cursor]!;
+      const next = this.runtime.points[nextIndex]!;
+      traveled += distanceBetween(current.center, next.center);
+      selected.set(next.index, next);
+      cursor = nextIndex;
+      if (cursor === pointIndex) {
+        break;
+      }
+    }
+
+    const points = this.runtime.points.filter((point) => selected.has(point.index));
+    return Object.freeze({ points: Object.freeze(points) });
+  }
 }
 
 function normalizeTrackConfig(trackConfig: string | null): string | null {
@@ -76,6 +123,10 @@ function squaredDistance(left: TrackVector3, right: TrackVector3): number {
   const y = left.y - right.y;
   const z = left.z - right.z;
   return (x * x) + (y * y) + (z * z);
+}
+
+function distanceBetween(left: TrackVector3, right: TrackVector3): number {
+  return Math.sqrt(squaredDistance(left, right));
 }
 
 function selectBestPoint(

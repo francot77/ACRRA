@@ -229,9 +229,9 @@ test('postDiscordWebhook sends multipart form data when attachments are present'
       },
       attachments: [
         {
-          filename: 'incident.svg',
-          contentType: 'image/svg+xml',
-          bytes: Buffer.from('<svg></svg>', 'utf8'),
+          filename: 'incident.gif',
+          contentType: 'image/gif',
+          bytes: Buffer.from('GIF89a', 'ascii'),
         },
       ],
     },
@@ -264,9 +264,9 @@ test('postDiscordWebhook sends multipart form data when attachments are present'
 
   const attachment = form.get('files[0]');
   assert.ok(attachment instanceof File);
-  assert.equal(attachment?.name, 'incident.svg');
-  assert.equal(attachment?.type, 'image/svg+xml');
-  assert.equal(await attachment?.text(), '<svg></svg>');
+  assert.equal(attachment?.name, 'incident.gif');
+  assert.equal(attachment?.type, 'image/gif');
+  assert.equal(Buffer.from(await attachment?.arrayBuffer() ?? new ArrayBuffer(0)).toString('ascii'), 'GIF89a');
 });
 
 test('report excludes DNS from awards, marks DNF and DNS, and formats impacts without raw milliseconds', () => {

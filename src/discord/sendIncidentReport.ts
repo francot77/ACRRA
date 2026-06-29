@@ -116,9 +116,9 @@ export function createIncidentReportDelivery(
       trackContextInput: input.reconstructionTrackContext,
     });
     const artifacts = buildArtifacts({ scene });
-    const primaryStatus = createVisualStatus(artifacts, Boolean(artifacts.staticSvg));
+    const primaryStatus = createVisualStatus(artifacts, Boolean(artifacts.animationGif));
 
-    if (!artifacts.staticSvg) {
+    if (!artifacts.animationGif) {
       return {
         primaryMessage: appendVisualStatus(baseMessage, primaryStatus),
       };
@@ -128,7 +128,7 @@ export function createIncidentReportDelivery(
       primaryMessage: appendVisualStatus(
         {
           ...baseMessage,
-          attachments: Object.freeze([artifacts.staticSvg]),
+          attachments: Object.freeze([artifacts.animationGif]),
         },
         primaryStatus
       ),
@@ -140,7 +140,7 @@ export function createIncidentReportDelivery(
           attachmentIncluded: false,
           notes: Object.freeze([
             ...artifacts.notes,
-            'incident.svg upload failed, so the report was sent without a visual attachment',
+            'incident.gif upload failed, so the report was sent without a visual attachment',
           ]),
         })
       ),
@@ -340,7 +340,7 @@ function formatVisualStatus(status: IncidentVisualStatus): string {
   const lines = [
     `Estado: ${status.delivery}`,
     `Frames: ${status.frameCount}`,
-    `Adjunto SVG: ${status.attachmentIncluded ? 'sí' : 'no'}`,
+    `Adjunto GIF: ${status.attachmentIncluded ? 'sí' : 'no'}`,
   ];
 
   if (status.notes.length > 0) {
