@@ -40,7 +40,7 @@ export function buildRaceMessage(input: {
   minActiveDriversForSafetyGain: number;
   nuclearMissileMinCarImpactKmh: number;
 }): RaceMessage {
-  const title = `🏁 Race Report - ${input.race.trackName}`;
+  const title = `🏁 ${truncate(input.race.trackName, 220)} · Race complete`;
   const activeDrivers = input.stats.filter((entry) => entry.active).length;
   const safetyEligible = activeDrivers >= input.minActiveDriversForSafetyGain;
   const officialActiveResults = input.stats
@@ -63,38 +63,42 @@ export function buildRaceMessage(input: {
     .filter((entry) => entry.active && entry.safetyChangeReason === 'updated')
     .map(
       (entry) =>
-        `P${entry.position} ${entry.name}${formatStatusSuffix(entry)}: ${entry.oldSafetyRating.toFixed(2)} -> ${entry.newSafetyRating.toFixed(2)} ${getSafetyCategory(entry.newSafetyRating)}`
+        `P${entry.position} ${truncate(entry.name, 42)}${formatStatusSuffix(entry)}: ${entry.oldSafetyRating.toFixed(2)} → ${entry.newSafetyRating.toFixed(2)} ${getSafetyCategory(entry.newSafetyRating)}`
     )
     .join('\n');
   const safetySummary = safetyEligible
     ? safetyUpdated || 'Sin cambios'
     : `No puntuable: ${activeDrivers} pilotos activos. Mínimo requerido: ${input.minActiveDriversForSafetyGain}.`;
   const awards = buildAwards(input.stats, input.groupedIncidents, input.nuclearMissileMinCarImpactKmh);
-  const awardText = awards.map((award) => `${award.label}: ${award.value}`).join('\n');
+  const awardText = awards.length > 0
+    ? awards.slice(0, 3).map((award) => `${award.label}: ${award.value}`).join('\n')
+    : 'Sin premios destacados en esta carrera.';
   const finishedDrivers = input.stats.filter((entry) => entry.active && entry.finished).length;
   const dnfDrivers = input.stats.filter((entry) => entry.active && !entry.finished).length;
   const dnsDrivers = input.stats.filter((entry) => entry.inactive).length;
-  const description = [
-    `Track: ${input.race.trackName}`,
-    ...(input.race.trackConfig?.trim() ? [`Layout: ${input.race.trackConfig}`] : []),
-    `Race laps: ${input.race.raceLaps}`,
-    `Car model: ${input.race.carModel ?? 'unknown'}`,
-    `Drivers: ${activeDrivers} active · ${finishedDrivers} finished · ${dnfDrivers} DNF · ${dnsDrivers} DNS`
+  const description = 'Resultado final · datos del JSON de carrera';
+  const raceInfo = [
+    `📍 ${truncate(input.race.trackName, 40)}`,
+    `🛣️ ${truncate(input.race.trackConfig?.trim() || 'Layout standard', 40)}`,
+    `🔁 ${input.race.raceLaps} vueltas · 🚗 ${truncate(input.race.carModel ?? 'unknown', 40)}`
   ].join('\n');
-  const footerText = `Archivo procesado: ${input.fileName}`;
+  const driverInfo = `${activeDrivers} activos · ${finishedDrivers} finalizados\n${dnfDrivers} DNF · ${dnsDrivers} DNS`;
+  const footerText = `Archivo procesado: ${truncate(input.fileName, 2000)}`;
   const embed: DiscordEmbed = {
     title,
     description,
     color: 0x2f7df6,
     fields: [
-      { name: 'Podio', value: podium, inline: true },
+      { name: 'Podio', value: truncate(podium, 1024), inline: false },
+      { name: '🏁 Carrera', value: raceInfo, inline: true },
+      { name: '📊 Pilotos', value: driverInfo, inline: true },
       {
         name: '⚡ Vuelta rápida',
-        value: fastestLap ? `${fastestLap.name} (${formatLapTime(fastestLap.bestLap)})` : 'Sin tiempo válido',
+        value: fastestLap ? `${truncate(fastestLap.name, 60)}\n${formatLapTime(fastestLap.bestLap)}` : 'Sin tiempo válido',
         inline: true
       },
-      { name: 'Premios', value: awardText, inline: false },
-      { name: 'Safety', value: safetySummary, inline: false }
+      { name: 'Safety', value: truncate(safetySummary, 1024), inline: true },
+      { name: 'Premios', value: truncate(awardText, 1024), inline: false }
     ],
     footer: { text: footerText }
   };
@@ -117,7 +121,7 @@ export function buildRaceMessage(input: {
       footerText
     ].join('\n'),
     webhookBody: {
-      content: title,
+      content: '',
       embeds: [embed]
     }
   };
@@ -234,12 +238,16 @@ function getAwardEligibleDrivers(stats: DriverRaceStats[]): DriverRaceStats[] {
 function formatPodiumEntry(entry: DriverRaceStats, leader: DriverRaceStats | null): string {
   const statusSuffix = formatStatusSuffix(entry);
   if (statusSuffix) {
-    return `P${entry.position} ${entry.name}${statusSuffix}`;
+    return `${getMedal(entry.position)} ${truncate(entry.name, 70)}${statusSuffix}`;
   }
 
   const gap = leader && leader.position !== entry.position ? entry.totalTime - leader.totalTime : 0;
-  const gapLabel = leader && leader.position !== entry.position && entry.hasValidResult && leader.hasValidResult ? ` (${formatGap(gap)})` : '';
-  return `P${entry.position} ${entry.name}${gapLabel}`;
+  const gapLabel = leader && leader.position !== entry.position && entry.hasValidResult && leader.hasValidResult ? ` · ${formatGap(gap)}` : ' · Ganador';
+  return `${getMedal(entry.position)} ${truncate(entry.name, 70)}${gapLabel}`;
+}
+
+function getMedal(position: number): string {
+  return position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `P${position}`;
 }
 
 function formatStatusSuffix(entry: DriverRaceStats): string {
@@ -274,4 +282,8 @@ function pickOne<T>(values: T[], compare: (left: T, right: T) => number): T | nu
 
 function compareNumbers(left: number | null | undefined, right: number | null | undefined): number {
   return (left ?? Number.POSITIVE_INFINITY) - (right ?? Number.POSITIVE_INFINITY);
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
 }

@@ -108,7 +108,7 @@ test('empty webhook falls back to console logging without crashing', async (t) =
 
   const payload = JSON.parse(infoLogs[0] ?? '{}') as { message?: string; summary?: string };
   assert.equal(payload.message, 'Discord webhook disabled, logging race summary instead');
-  assert.match(payload.summary ?? '', /Race Report - monza/);
+  assert.match(payload.summary ?? '', /🏁 monza · Race complete/);
   assert.match(payload.summary ?? '', /Archivo procesado: sample-race.json/);
 });
 
@@ -181,21 +181,62 @@ test('configured webhook sends exactly one request with the required race report
   const fieldNames = embed?.fields.map((field) => field.name) ?? [];
   const awardsField = embed?.fields.find((field) => field.name === 'Premios');
 
-  assert.equal(body.content, '🏁 Race Report - monza');
-  assert.equal(embed?.title, '🏁 Race Report - monza');
-  assert.match(embed?.description ?? '', /Car model: lotus_exos_125_s1/);
-  assert.match(embed?.description ?? '', /Race laps: 3/);
-  assert.match(embed?.description ?? '', /Drivers: 2 active · 2 finished · 0 DNF · 0 DNS/);
+  assert.equal(body.content, '');
+  assert.equal(embed?.title, '🏁 monza · Race complete');
+  assert.equal(embed?.description, 'Resultado final · datos del JSON de carrera');
+  assert.match(embed?.fields.find((field) => field.name === '🏁 Carrera')?.value ?? '', /lotus_exos_125_s1/);
+  assert.match(embed?.fields.find((field) => field.name === '🏁 Carrera')?.value ?? '', /3 vueltas/);
+  assert.match(embed?.fields.find((field) => field.name === '📊 Pilotos')?.value ?? '', /2 activos · 2 finalizados/);
   assert.equal(embed?.footer?.text, 'Archivo procesado: sample-race.json');
-  assert.deepEqual(fieldNames, ['Podio', '⚡ Vuelta rápida', 'Premios', 'Safety']);
+  assert.deepEqual(fieldNames, ['Podio', '🏁 Carrera', '📊 Pilotos', '⚡ Vuelta rápida', 'Safety', 'Premios']);
   assert.doesNotMatch(awardsField?.value ?? '', /⚡ Vuelta rápida/);
   assert.match(awardsField?.value ?? '', /🧼 Más limpio/);
   assert.match(awardsField?.value ?? '', /🧱 Albañil del día/);
   assert.match(awardsField?.value ?? '', /💥 Misil nuclear/);
-  assert.match(awardsField?.value ?? '', /🚜 Cono del día/);
-  assert.match(awardsField?.value ?? '', /📈 Más consistente/);
-  assert.match(awardsField?.value ?? '', /🐢 Tortuga digna/);
+  assert.ok((awardsField?.value ?? '').split('\n').length <= 3);
   assert.doesNotMatch(awardsField?.value ?? '', /No aplica/);
+});
+
+test('race embed stays compact and valid for one to twenty drivers', () => {
+  const oneDriver = buildMessage({
+    fileName: 'one-driver-race.json',
+    race: { ...createRace(), trackConfig: 'gp-layout' },
+    stats: [createStat({ name: 'Solo Driver', bestLap: null })],
+    groupedIncidents: [],
+    minActiveDriversForSafetyGain: 2
+  });
+  const oneEmbed = oneDriver.webhookBody.embeds[0];
+  assert.equal(oneDriver.webhookBody.content, '');
+  assert.match(oneEmbed?.title ?? '', /Race complete/);
+  assert.match(oneEmbed?.fields.find((field) => field.name === 'Podio')?.value ?? '', /🥇 Solo Driver/);
+  assert.match(oneEmbed?.fields.find((field) => field.name === 'Safety')?.value ?? '', /No puntuable/);
+
+  const twentyDrivers = Array.from({ length: 20 }, (_, index) => createStat({
+    carId: index + 1,
+    name: `Driver ${index + 1}`,
+    guid: `guid-${index + 1}`,
+    identity: { kind: 'guid', value: `guid-${index + 1}` },
+    position: index + 1,
+    totalTime: 300000 + index * 1000,
+    newSafetyRating: 75 + index / 10
+  }));
+  const twentyDriverMessage = buildMessage({
+    fileName: 'twenty-driver-race.json',
+    race: createRace(),
+    stats: twentyDrivers,
+    groupedIncidents: [],
+    minActiveDriversForSafetyGain: 3
+  });
+  const embed = twentyDriverMessage.webhookBody.embeds[0];
+  assert.ok((embed?.fields.length ?? 0) <= 25);
+  for (const field of embed?.fields ?? []) {
+    assert.ok(field.name.length <= 256);
+    assert.ok(field.value.length >= 1 && field.value.length <= 1024);
+  }
+  assert.ok((embed?.description.length ?? 0) <= 4096);
+  assert.ok((embed?.footer.text.length ?? 0) <= 2048);
+  assert.match(embed?.fields.find((field) => field.name === 'Podio')?.value ?? '', /🥇 Driver 1/);
+  assert.match(embed?.fields.find((field) => field.name === 'Podio')?.value ?? '', /🥉 Driver 3/);
 });
 
 test('postDiscordWebhook sends multipart form data when attachments are present', async (t) => {
@@ -356,14 +397,14 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
   assert.match(podiumField?.value ?? '', /Crash Driver \(DNF 0\/3 vueltas\)/);
   assert.doesNotMatch(podiumField?.value ?? '', /DNS Driver/);
   assert.doesNotMatch(awardsField?.value ?? '', /DNS Driver/);
-  assert.match(awardsField?.value ?? '', /Crash Driver \(3 impactos antes de empezar\)/);
+  assert.match(awardsField?.value ?? '', /Crash Driver/);
   assert.doesNotMatch(awardsField?.value ?? '', /🧼 Más limpio/);
   assert.doesNotMatch(awardsField?.value ?? '', /📈 Más consistente/);
   assert.doesNotMatch(awardsField?.value ?? '', /🐢 Tortuga digna/);
   assert.doesNotMatch(awardsField?.value ?? '', /No aplica/);
   assert.doesNotMatch(awardsField?.value ?? '', /\b\d+(?:\.\d+)? ms\b/);
   assert.doesNotMatch(safetyField?.value ?? '', /DNS Driver/);
-  assert.match(safetyField?.value ?? '', /P3 Crash Driver \(DNF 0\/3 vueltas\): 80\.00 -> 76\.85/);
+  assert.match(safetyField?.value ?? '', /P3 Crash Driver \(DNF 0\/3 vueltas\): 80\.00 → 76\.85/);
   assert.doesNotMatch(message.summaryText, /Resumen de incidentes/);
 });
 
@@ -410,7 +451,7 @@ test('report explains unchanged safety below the active-driver minimum without p
   const awardsField = embed.fields.find((field) => field.name === 'Premios');
   const safetyField = embed.fields.find((field) => field.name === 'Safety');
 
-  assert.equal(awardsField?.value, '');
+  assert.equal(awardsField?.value, 'Sin premios destacados en esta carrera.');
   assert.doesNotMatch(awardsField?.value ?? '', /⚡ Vuelta rápida|No aplica|Sin datos|Más limpio|Más consistente|Tortuga digna/);
   assert.equal(safetyField?.value, 'No puntuable: 1 pilotos activos. Mínimo requerido: 3.');
 });
@@ -604,7 +645,7 @@ test('report marks two-active-driver race as no puntuable and omits dns plus old
   const safety = embed.fields.find((field) => field.name === 'Safety')?.value ?? '';
 
   assert.match(safety, /No puntuable: 2 pilotos activos\. Mínimo requerido: 3\./);
-  assert.match(message.summaryText, /Drivers: 2 active · 1 finished · 1 DNF · 1 DNS/);
+  assert.match(embed.fields.find((field) => field.name === '📊 Pilotos')?.value ?? '', /2 activos · 1 finalizados/);
   assert.doesNotMatch(message.summaryText, /Safety actualizada|Safety sin cambios/);
   assert.doesNotMatch(podium, /DNS Driver/);
 });
