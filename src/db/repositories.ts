@@ -1,8 +1,5 @@
 import { DriverRaceStats, ParsedRace } from '../types/assetto';
-import type { IncidentVerdict, IncidentVerdictType } from '../incidents/analyzeIncidentVerdict';
-import { FinalizedLiveIncidentPackage, LiveCollisionEvent, LiveCollisionPacketKind, LiveIncidentTrackedCar, Vector3 } from '../live/liveTypes';
 import { AppDatabase } from './db';
-import type { StatementSync } from 'node:sqlite';
 
 type PersistRaceInput = {
   fileName: string;
@@ -16,53 +13,6 @@ type PersistRaceInput = {
 type PersistRaceResult =
   | { status: 'inserted'; raceId: number; persistedDrivers: number }
   | { status: 'duplicate' };
-
-type PersistLiveIncidentInput = {
-  incident: FinalizedLiveIncidentPackage;
-  raceId?: number | null;
-};
-
-type PersistLiveIncidentResult =
-  | { status: 'inserted'; incidentId: number; snapshotCount: number }
-  | { status: 'duplicate' };
-
-export type PersistedLiveIncidentSnapshot = {
-  id: number;
-  incidentId: number;
-  relativeMs: number;
-  carId: number;
-  snapshotReceivedAt: string;
-  pos: Vector3;
-  velocity: Vector3;
-  speedKmh: number;
-  gear: number | null;
-  engineRpm: number | null;
-  normalizedSplinePos: number | null;
-};
-
-export type PersistedLiveIncident = {
-  id: number;
-  incidentUid: string;
-  raceId: number | null;
-  type: LiveCollisionPacketKind;
-  carId: number;
-  otherCarId: number | null;
-  impactSpeed: number;
-  worldPosition: Vector3;
-  relativePosition: Vector3 | null;
-  createdAt: string;
-  firstReceivedAt: string;
-  lastReceivedAt: string;
-  captureStartMs: number;
-  captureEndMs: number;
-  matched: boolean;
-  matchedAt: string | null;
-  verdictType: IncidentVerdictType | null;
-  verdictConfidence: number | null;
-  verdictBlamedCarId: number | null;
-  verdictExplanation: string[];
-  snapshots: PersistedLiveIncidentSnapshot[];
-};
 
 export type Repositories = ReturnType<typeof createRepositories>;
 
@@ -148,7 +98,7 @@ export function createRepositories(database: AppDatabase) {
     INSERT INTO processed_files (file_name, file_path, file_hash, processed_at)
     VALUES (@fileName, @filePath, @fileHash, @processedAt)
   `);
-  /* Legacy live-incident SQL is intentionally not prepared: migration 2 removes its tables. */
+  /* Legacy live-incident SQL remains only in migration/archive compatibility code. */
   /*
     INSERT INTO live_incidents (
       incident_uid,
@@ -428,125 +378,10 @@ export function createRepositories(database: AppDatabase) {
         }
       }
     },
-    liveIncidents: {
-      persist(..._args: unknown[]): PersistLiveIncidentResult { throw new Error('Live incident persistence was removed; use normalized race export events'); },
-      list(..._args: unknown[]): PersistedLiveIncident[] { throw new Error('Live incident storage was removed; consult the verified archive'); },
-      listPendingMatch(..._args: unknown[]): PersistedLiveIncident[] { throw new Error('Live incident matching was removed'); },
-      markMatched(..._args: unknown[]): boolean { throw new Error('Heuristic incident verdict persistence was removed'); },
-      deleteMatched(..._args: unknown[]): number { throw new Error('Live incident cleanup API was removed with the live schema'); }
-    }
   };
 
 }
 
-type LiveIncidentRow = {
-  id: number;
-  incident_uid: string;
-  race_id: number | null;
-  type: LiveCollisionPacketKind;
-  car_id: number;
-  other_car_id: number | null;
-  impact_speed: number;
-  world_pos_x: number;
-  world_pos_y: number;
-  world_pos_z: number;
-  rel_pos_x: number | null;
-  rel_pos_y: number | null;
-  rel_pos_z: number | null;
-  created_at: string;
-  first_received_at: string;
-  last_received_at: string;
-  capture_start_ms: number;
-  capture_end_ms: number;
-  matched: number;
-  matched_at: string | null;
-  verdict_type: IncidentVerdictType | null;
-  verdict_confidence: number | null;
-  verdict_blamed_car_id: number | null;
-  verdict_explanation_json: string | null;
-};
-
-type LiveIncidentSnapshotRow = {
-  id: number;
-  incident_id: number;
-  relative_ms: number;
-  car_id: number;
-  snapshot_received_at: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  vel_x: number;
-  vel_y: number;
-  vel_z: number;
-  speed_kmh: number;
-  gear: number | null;
-  engine_rpm: number | null;
-  normalized_spline_pos: number | null;
-};
-
-function persistSnapshots(
-  statement: StatementSync,
-  incidentId: number,
-  firstReceivedAtMs: number,
-  car: LiveIncidentTrackedCar
-): number {
-  let snapshotCount = 0;
-
-  for (const snapshot of car.snapshots) {
-    statement.run({
-      incidentId,
-      relativeMs: snapshot.receivedAtMs - firstReceivedAtMs,
-      carId: snapshot.carId,
-      snapshotReceivedAt: new Date(snapshot.receivedAtMs).toISOString(),
-      posX: snapshot.pos.x,
-      posY: snapshot.pos.y,
-      posZ: snapshot.pos.z,
-      velX: snapshot.velocity.x,
-      velY: snapshot.velocity.y,
-      velZ: snapshot.velocity.z,
-      speedKmh: snapshot.speedKmh,
-      gear: snapshot.gear ?? null,
-      engineRpm: snapshot.engineRpm ?? null,
-      normalizedSplinePos: snapshot.normalizedSplinePos ?? null,
-    });
-    snapshotCount += 1;
-  }
-
-  return snapshotCount;
-}
-
-function pickRepresentativeEvent(events: LiveCollisionEvent[]): LiveCollisionEvent {
-  const [firstEvent, ...rest] = events;
-  if (!firstEvent) {
-    throw new Error('Cannot persist live incident without at least one event');
-  }
-
-  return rest.reduce((selected, candidate) => {
-    if (candidate.impactSpeed > selected.impactSpeed) {
-      return candidate;
-    }
-
-    if (candidate.impactSpeed === selected.impactSpeed && candidate.receivedAtMs < selected.receivedAtMs) {
-      return candidate;
-    }
-
-    return selected;
-  }, firstEvent);
-}
-
 function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('UNIQUE constraint failed');
-}
-
-function parseVerdictExplanation(value: string | null): string[] {
-  if (!value) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
-  } catch {
-    return [];
-  }
 }

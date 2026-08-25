@@ -65,7 +65,7 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 | `HOST_ASSETTO_RESULTS_DIR` | `/opt/assetto/server/results` | Host path para Compose. |
 | `HOST_MONITOR_DATA_DIR` | `/opt/ac-race-monitor/data` | Host path para SQLite persistente. |
 
-### Phase-1 authority and deprecated settings
+### JSON race-file authority
 
 Only stable filenames matching `*RACE*.json` are race authority. Each filename
 is parsed after the stability gate, persisted transactionally, and reported at
@@ -73,15 +73,10 @@ most once through `processed_files`. Duplicate filenames are skipped; invalid
 JSON, malformed sessions, and non-`RACE` sessions are rejected or skipped with
 an actionable log and never create partial race state.
 
-The following settings are deprecated compatibility inputs: `LIVE_UDP_ENABLED`,
-`LIVE_UDP_DEBUG`, `INCIDENTS_WEBHOOK_ENABLED`,
-`INCIDENTS_DISCORD_WEBHOOK_URL`, `AC_UDP_SERVER_HOST`,
-`AC_UDP_SERVER_PLUGIN_PORT`, `AC_UDP_PLUGIN_LISTEN_PORT`,
-`REALTIME_REPORT_INTERVAL_MS`, `SNAPSHOT_RING_BUFFER_MS`, `INCIDENT_PRE_MS`,
-`INCIDENT_POST_MS`, `INCIDENT_DEBUG`, `INCIDENT_MATCH_MAX_DISTANCE_M`, and
-`INCIDENT_MATCH_MAX_IMPACT_DIFF_KMH`. They are accepted for compatibility,
-reported as deprecated, and ignored. Startup does not open UDP, perform live
-matching, write live incidents, or persist heuristic verdicts.
+The worker is JSON-only. It does not open UDP sockets, capture or match live
+incidents, reconstruct live incidents, or deliver incident reports. Collision
+and event data normalized from final race JSON remains available to safety and
+race-report calculations.
 
 ## Local Run
 

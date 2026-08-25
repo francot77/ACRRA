@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { AppConfig, getConfiguredDeprecatedLegacySettings, loadConfig } from './config';
+import { AppConfig, loadConfig } from './config';
 import { buildRaceMessage } from './discord/buildRaceMessage';
 import { sendWebhook } from './discord/sendWebhook';
 import { openDatabase } from './db/db';
@@ -20,7 +20,6 @@ type BootstrapRuntime = {
   database: ReturnType<typeof openDatabase>;
   repositories: Repositories;
   processRaceFile: ReturnType<typeof createRaceProcessor>;
-  liveUdpClient: null;
   watcher: Awaited<ReturnType<typeof watchRaceResults>>;
   scoringScheduler: DailyRaceScheduler | null;
 };
@@ -111,19 +110,12 @@ export function createRaceProcessor(
 
 export async function main(): Promise<void> {
   const config = loadConfig();
-  const deprecatedSettings = getConfiguredDeprecatedLegacySettings();
-  if (deprecatedSettings.length > 0) {
-    log('warn', 'bootstrap', 'Legacy UDP and incident settings are deprecated and ignored; file race exports remain authoritative', {
-      settings: deprecatedSettings
-    });
-  }
   const runtime = await bootstrapApplication(config);
 
   log('info', 'bootstrap', 'AC race monitor started', {
     resultsDir: config.resultsDir,
     watchGlob: config.watchGlob,
     processedFileStrategy: config.processedFileStrategy,
-    liveUdpEnabled: false,
   });
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -153,8 +145,6 @@ export async function bootstrapApplication(
   const database = openDatabaseDependency(config.databasePath, { archiveDirectory: config.databaseArchiveDirectory ?? undefined });
   const repositories = createRepositoriesDependency(database);
   const processRaceFile = createRaceProcessor(config, repositories);
-  // Legacy UDP and incident orchestration is intentionally quarantined.
-  const liveUdpClient = null;
   const watcher = await watchRaceResultsDependency({ config, repositories, processFile: processRaceFile });
   const scoringScheduler = config.scoringEnabled
     ? new DailyRaceScheduler({
@@ -178,7 +168,6 @@ export async function bootstrapApplication(
     database,
     repositories,
     processRaceFile,
-    liveUdpClient,
     watcher,
     scoringScheduler,
   };

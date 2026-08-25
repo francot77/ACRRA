@@ -6,7 +6,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { backupDatabase, openDatabase } from '../src/db/db';
 import { applyMigrations, migrations, verifyIncidentArchive } from '../src/db/migrations';
-import { getConfiguredDeprecatedLegacySettings } from '../src/config';
 
 function legacyDatabasePath(): string {
   const path = join(mkdtempSync(join(tmpdir(), 'acrra-migration-')), 'legacy.sqlite');
@@ -92,9 +91,4 @@ test('backup integrity covers a temporary database and optional WAL sidecars', (
   assert.equal(restored.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
   restored.close();
   database.close();
-});
-
-test('deprecated UDP and incident settings are reported as ignored compatibility inputs', () => {
-  assert.deepEqual(getConfiguredDeprecatedLegacySettings({ LIVE_UDP_ENABLED: 'true', INCIDENT_DEBUG: 'true' }), ['LIVE_UDP_ENABLED', 'INCIDENT_DEBUG']);
-  assert.deepEqual(getConfiguredDeprecatedLegacySettings({}), []);
 });

@@ -5,20 +5,6 @@ const envSchema = z.object({
   DATABASE_PATH: z.string().default('/app/data/ac-race-monitor.sqlite'),
   DATABASE_ARCHIVE_DIR: z.string().default(''),
   DISCORD_WEBHOOK_URL: z.string().default(''),
-  INCIDENTS_DISCORD_WEBHOOK_URL: z.string().default(''),
-  INCIDENTS_WEBHOOK_ENABLED: z.enum(['true', 'false']).default('false'),
-  LIVE_UDP_ENABLED: z.enum(['true', 'false']).default('false'),
-  LIVE_UDP_DEBUG: z.enum(['true', 'false']).default('false'),
-  AC_UDP_SERVER_HOST: z.string().default('127.0.0.1'),
-  AC_UDP_SERVER_PLUGIN_PORT: z.coerce.number().int().positive().default(11000),
-  AC_UDP_PLUGIN_LISTEN_PORT: z.coerce.number().int().positive().default(12000),
-  REALTIME_REPORT_INTERVAL_MS: z.coerce.number().int().positive().default(250),
-  SNAPSHOT_RING_BUFFER_MS: z.coerce.number().int().positive().default(10000),
-  INCIDENT_PRE_MS: z.coerce.number().int().nonnegative().default(3000),
-  INCIDENT_POST_MS: z.coerce.number().int().nonnegative().default(1500),
-  INCIDENT_DEBUG: z.enum(['true', 'false']).default('false'),
-  INCIDENT_MATCH_MAX_DISTANCE_M: z.coerce.number().positive().default(30),
-  INCIDENT_MATCH_MAX_IMPACT_DIFF_KMH: z.coerce.number().nonnegative().default(35),
   PROCESSED_FILE_STRATEGY: z.literal('sqlite').default('sqlite'),
   SCAN_ON_START: z.enum(['true', 'false']).default('true'),
   MIN_FILE_AGE_MS: z.coerce.number().int().nonnegative().default(3000),
@@ -37,46 +23,11 @@ const envSchema = z.object({
   NODE_ENV: z.string().default('production')
 });
 
-export const DEPRECATED_LEGACY_SETTINGS = [
-  'LIVE_UDP_ENABLED',
-  'LIVE_UDP_DEBUG',
-  'INCIDENTS_WEBHOOK_ENABLED',
-  'INCIDENTS_DISCORD_WEBHOOK_URL',
-  'AC_UDP_SERVER_HOST',
-  'AC_UDP_SERVER_PLUGIN_PORT',
-  'AC_UDP_PLUGIN_LISTEN_PORT',
-  'REALTIME_REPORT_INTERVAL_MS',
-  'SNAPSHOT_RING_BUFFER_MS',
-  'INCIDENT_PRE_MS',
-  'INCIDENT_POST_MS',
-  'INCIDENT_DEBUG',
-  'INCIDENT_MATCH_MAX_DISTANCE_M',
-  'INCIDENT_MATCH_MAX_IMPACT_DIFF_KMH'
-] as const;
-
-export function getConfiguredDeprecatedLegacySettings(env: NodeJS.ProcessEnv = process.env): string[] {
-  return DEPRECATED_LEGACY_SETTINGS.filter((key) => env[key] !== undefined);
-}
-
 export type AppConfig = {
   resultsDir: string;
   databasePath: string;
   databaseArchiveDirectory: string | null;
   discordWebhookUrl: string;
-  incidentsDiscordWebhookUrl: string;
-  incidentsWebhookEnabled: boolean;
-  liveUdpEnabled: boolean;
-  liveUdpDebug: boolean;
-  acUdpServerHost: string;
-  acUdpServerPluginPort: number;
-  acUdpPluginListenPort: number;
-  realtimeReportIntervalMs: number;
-  snapshotRingBufferMs: number;
-  incidentPreMs: number;
-  incidentPostMs: number;
-  incidentDebug: boolean;
-  incidentMatchMaxDistanceM: number;
-  incidentMatchMaxImpactDiffKmh: number;
   processedFileStrategy: 'sqlite';
   scanOnStart: boolean;
   minFileAgeMs: number;
@@ -103,20 +54,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databasePath: parsed.DATABASE_PATH,
     databaseArchiveDirectory: parsed.DATABASE_ARCHIVE_DIR.trim() || null,
     discordWebhookUrl: parsed.DISCORD_WEBHOOK_URL,
-    incidentsDiscordWebhookUrl: parsed.INCIDENTS_DISCORD_WEBHOOK_URL,
-    incidentsWebhookEnabled: parsed.INCIDENTS_WEBHOOK_ENABLED === 'true',
-    liveUdpEnabled: parsed.LIVE_UDP_ENABLED === 'true',
-    liveUdpDebug: parsed.LIVE_UDP_DEBUG === 'true',
-    acUdpServerHost: parsed.AC_UDP_SERVER_HOST,
-    acUdpServerPluginPort: parsed.AC_UDP_SERVER_PLUGIN_PORT,
-    acUdpPluginListenPort: parsed.AC_UDP_PLUGIN_LISTEN_PORT,
-    realtimeReportIntervalMs: parsed.REALTIME_REPORT_INTERVAL_MS,
-    snapshotRingBufferMs: parsed.SNAPSHOT_RING_BUFFER_MS,
-    incidentPreMs: parsed.INCIDENT_PRE_MS,
-    incidentPostMs: parsed.INCIDENT_POST_MS,
-    incidentDebug: parsed.INCIDENT_DEBUG === 'true',
-    incidentMatchMaxDistanceM: parsed.INCIDENT_MATCH_MAX_DISTANCE_M,
-    incidentMatchMaxImpactDiffKmh: parsed.INCIDENT_MATCH_MAX_IMPACT_DIFF_KMH,
     processedFileStrategy: parsed.PROCESSED_FILE_STRATEGY,
     scanOnStart: parsed.SCAN_ON_START === 'true',
     minFileAgeMs: parsed.MIN_FILE_AGE_MS,

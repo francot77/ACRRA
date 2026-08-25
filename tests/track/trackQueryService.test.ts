@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { inferTurnSide } from '../../src/incidents/incidentVerdictGeometry';
 import { TrackQueryService } from '../../src/track/trackQueryService';
 import type { TrackRuntimeModel } from '../../src/track/trackTypes';
 
@@ -51,18 +50,6 @@ test('track query service resolves neighboring points with wraparound', () => {
   assert.equal(neighbors.previous.index, 30);
   assert.equal(neighbors.current.index, 10);
   assert.equal(neighbors.next.index, 20);
-});
-
-test('track query service neighboring seam feeds deterministic left-turn inputs for verdict geometry', () => {
-  const service = new TrackQueryService(createRuntime([
-    createPoint({ index: 1, center: { x: -1, y: 0, z: 0 } }),
-    createPoint({ index: 2, center: { x: 0, y: 0, z: 0 } }),
-    createPoint({ index: 3, center: { x: 1, y: 0, z: 1 } }),
-  ]));
-
-  const turnSide = inferTurnSide(service.getNeighboringPoints(2));
-
-  assert.equal(turnSide, 'left');
 });
 
 function createRuntime(points: TrackRuntimeModel['points']): TrackRuntimeModel {
