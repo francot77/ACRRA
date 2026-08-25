@@ -256,9 +256,6 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     resultsDir: '/app/results',
     databasePath: '/app/data/ac-race-monitor.sqlite',
-    trackModelPath: '/app/track-models/monza/track-model.json',
-    trackModelTrack: 'monza',
-    trackModelLayout: null,
     discordWebhookUrl: '',
     incidentsDiscordWebhookUrl: '',
     incidentsWebhookEnabled: false,

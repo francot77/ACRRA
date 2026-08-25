@@ -12,9 +12,6 @@ function createConfig(resultsDir: string): AppConfig {
   return {
     resultsDir,
     databasePath: join(resultsDir, 'unused.sqlite'),
-    trackModelPath: join(process.cwd(), 'track-models/monza/track-model.json'),
-    trackModelTrack: 'monza',
-    trackModelLayout: null,
     discordWebhookUrl: '',
     incidentsDiscordWebhookUrl: '',
     incidentsWebhookEnabled: false,

@@ -1,6 +1,6 @@
 import type { AppDatabase } from '../db/db';
 import { DriverIdentityStore } from './identity';
-import type { Award, ScoringRace } from './types';
+import type { Award, ScoringRace, ScoringStanding } from './types';
 import type { StandingsReport } from '../discord/buildStandingsMessage';
 
 export type ReportOutboxEntry = {
@@ -46,6 +46,11 @@ export class ScoringStore {
       }
       const insert = this.database.prepare('INSERT INTO championship_awards (run_id, driver_id, driver_name, position, points) VALUES (?, ?, ?, ?, ?)');
       for (const award of awards) insert.run(race.runId, award.driverId, award.driverName, award.position, award.points);
+      const resultInsert = this.database.prepare('INSERT INTO scoring_results (run_id, driver_id, position, classified) VALUES (?, ?, ?, ?)');
+      for (const result of race.results) {
+        if (result.driverId == null) throw new Error(`Scoring result for ${result.driverName} is missing its identity`);
+        resultInsert.run(race.runId, result.driverId, result.position, result.classified ? 1 : 0);
+      }
       this.database.prepare('INSERT INTO scoring_report_outbox (report_id, run_id, status, payload_json, created_at) VALUES (?, ?, ?, ?, ?)').run(report.reportId, race.runId, 'pending', JSON.stringify(report), new Date().toISOString());
       this.database.exec('COMMIT');
       return 'inserted';
@@ -53,6 +58,29 @@ export class ScoringStore {
       this.database.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  getStandings(): ScoringStanding[] {
+    const rows = this.database.prepare(`
+      SELECT d.display_name AS driverName,
+             COALESCE(SUM(a.points), 0) AS points,
+             COUNT(DISTINCT r.run_id) AS races,
+             SUM(CASE WHEN r.classified = 1 AND r.position = 1 THEN 1 ELSE 0 END) AS wins,
+             SUM(CASE WHEN r.classified = 1 AND r.position <= 3 THEN 1 ELSE 0 END) AS podiums
+      FROM scoring_drivers d
+      LEFT JOIN scoring_results r ON r.driver_id = d.id
+      LEFT JOIN championship_awards a ON a.driver_id = d.id AND a.run_id = r.run_id
+      GROUP BY d.id, d.display_name
+      ORDER BY points DESC, wins DESC, podiums DESC, driverName COLLATE NOCASE ASC
+      LIMIT 20
+    `).all() as Array<ScoringStanding & { points: number; races: number; wins: number; podiums: number }>;
+    return rows.map((row) => ({
+      driverName: row.driverName,
+      points: Number(row.points),
+      races: Number(row.races),
+      wins: Number(row.wins),
+      podiums: Number(row.podiums)
+    }));
   }
 
   getReport(reportId: string): ReportOutboxEntry | null {

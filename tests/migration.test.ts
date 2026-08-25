@@ -49,10 +49,11 @@ test('populated databases archive incidents and snapshots before deleting legacy
 test('empty fresh databases converge without creating legacy incident tables', () => {
   const database = openDatabase(join(mkdtempSync(join(tmpdir(), 'acrra-migration-')), 'fresh.sqlite'));
   assert.equal(database.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'live_incident%'").get(), undefined);
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 6);
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 7);
   assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE name = 'scoring_run_slots'").get());
   assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE name = 'championship_awards'").get());
   assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE name = 'scoring_report_outbox'").get());
+  assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE name = 'scoring_results'").get());
   database.close();
 });
 

@@ -18,9 +18,6 @@ function createConfig(resultsDir: string, databasePath: string, overrides: Parti
   return {
     resultsDir,
     databasePath,
-    trackModelPath: resolve(process.cwd(), 'track-models/monza/track-model.json'),
-    trackModelTrack: 'monza',
-    trackModelLayout: null,
     discordWebhookUrl: 'https://discord.example/race',
     incidentsDiscordWebhookUrl: 'https://discord.example/incidents',
     incidentsWebhookEnabled: true,

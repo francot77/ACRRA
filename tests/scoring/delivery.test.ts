@@ -32,15 +32,15 @@ function source(): ValidatedRaceSource {
   };
 }
 
-test('standings report is stable, named, and limited to the top ten', () => {
+test('standings report is stable, named, and limited to twenty drivers', () => {
   const report = buildStandingsMessage({
     reportId: 'report-1', raceId: 'race-1', runId: 'run-1',
     rows: Array.from({ length: 12 }, (_, index) => ({ driverName: `Pilot ${index + 1}`, position: index + 1, points: 12 - index }))
   });
   assert.equal(report.title, 'Copa NHRacing — resultados de hoy');
-  assert.equal(report.rows.length, 10);
-  assert.match(report.message.webhookBody.embeds[0].description, /1\. Pilot 1 — 12 pts/);
-  assert.doesNotMatch(report.message.webhookBody.embeds[0].description, /Pilot 11/);
+  assert.equal(report.rows.length, 12);
+  assert.match(report.message.webhookBody.embeds[0].description, /1\. Pilot 1 — 12 pts · 0 carreras · 0 victorias · 0 podios/);
+  assert.match(report.message.webhookBody.embeds[0].description, /Pilot 11/);
 });
 
 test('failed delivery retries the stored report without rescoring or duplicate awards', async () => {

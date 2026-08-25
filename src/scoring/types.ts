@@ -1,6 +1,7 @@
 export type FinishResult = {
   driverName: string;
   driverGuid?: string | null;
+  driverId?: number;
   position: number;
   classified: boolean;
 };
@@ -16,6 +17,14 @@ export type Award = {
   driverName: string;
   position: number;
   points: number;
+};
+
+export type ScoringStanding = {
+  driverName: string;
+  points: number;
+  races: number;
+  wins: number;
+  podiums: number;
 };
 
 export type ScoringDriver = {

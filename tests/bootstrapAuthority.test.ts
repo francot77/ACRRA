@@ -5,13 +5,11 @@ import type { AppConfig } from '../src/config';
 
 test('legacy settings do not activate live authority or incident side effects at startup', async () => {
   const calls: string[] = [];
-  let udpCloseCalls = 0;
   let incidentWriteCalls = 0;
   let verdictWriteCalls = 0;
   let processFileCalls = 0;
 
   const runtime = await bootstrapApplication(createConfig(), {
-    loadTrackRuntime: () => createTrackRuntime(),
     openDatabase: () => ({
       close: () => calls.push('database.close'),
     } as ReturnType<typeof import('../src/db/db').openDatabase>),
@@ -27,15 +25,6 @@ test('legacy settings do not activate live authority or incident side effects at
         deleteMatched: () => { incidentWriteCalls += 1; return 0; },
       },
     } as ReturnType<typeof import('../src/db/repositories').createRepositories>),
-    async startAcUdpClient() {
-      calls.push('startAcUdpClient');
-      return {
-        close: async () => { udpCloseCalls += 1; },
-        getStatus: () => ({ smokeGate: { ready: false, captureEnabled: false, seen: { car_update: false, collision_with_car: false, collision_with_env: false }, seenAt: {} }, finalizedIncidentCount: 0, pendingIncidentCount: 0 }),
-        getSnapshots: () => [],
-        getFinalizedIncidents: () => [],
-      };
-    },
     async watchRaceResults({ processFile }) {
       calls.push('watchRaceResults');
       void processFile;
@@ -48,13 +37,12 @@ test('legacy settings do not activate live authority or incident side effects at
   assert.equal(processFileCalls, 0);
   assert.equal(incidentWriteCalls, 0);
   assert.equal(verdictWriteCalls, 0);
-  assert.equal(udpCloseCalls, 0);
+  assert.equal(runtime.liveUdpClient, null);
 });
 
 function createConfig(): AppConfig {
   return {
-    resultsDir: '/tmp/results', databasePath: '/tmp/acrra-test.sqlite', trackModelPath: 'unused',
-    trackModelTrack: 'monza', trackModelLayout: null, discordWebhookUrl: 'legacy-race-webhook',
+    resultsDir: '/tmp/results', databasePath: '/tmp/acrra-test.sqlite', discordWebhookUrl: 'legacy-race-webhook',
     incidentsDiscordWebhookUrl: 'legacy-incident-webhook', incidentsWebhookEnabled: true,
     liveUdpEnabled: true, liveUdpDebug: true, acUdpServerHost: '127.0.0.1', acUdpServerPluginPort: 11000,
     acUdpPluginListenPort: 12000, realtimeReportIntervalMs: 250, snapshotRingBufferMs: 10000,
@@ -63,11 +51,4 @@ function createConfig(): AppConfig {
     watchGlob: '*RACE*.json', defaultSafetyRating: 75, safetyMemoryFactor: 0.85,
     minActiveDriversForSafetyGain: 3, nuclearMissileMinCarImpactKmh: 100, nodeEnv: 'test',
   };
-}
-
-function createTrackRuntime() {
-  return {
-    schemaVersion: 1, track: 'monza', layout: null, totalLengthMeters: 1, pointCount: 1,
-    points: [{ index: 0, s: 0, normalized: 0, center: { x: 0, y: 0, z: 0 }, forward: { x: 1, y: 0, z: 0 }, sideLeft: 1, sideRight: 1, width: 2, leftEdge: { x: 0, y: 0, z: 1 }, rightEdge: { x: 0, y: 0, z: -1 } }],
-  } as const;
 }

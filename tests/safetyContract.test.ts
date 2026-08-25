@@ -110,9 +110,7 @@ test('general Discord report derives incident counts from normalized JSON Events
   assert.equal(DISCORD_EVENT_BASIS_VERSION, 'normalized-json-events-v1');
   assert.equal(race.events.length, 3);
   assert.equal(grouped.length, 1);
-  assert.match(message.summaryText, /Contactos entre autos agrupados: 1/);
-  assert.match(message.summaryText, /Eventos crudos entre autos: 2/);
-  assert.match(message.summaryText, /Golpes con entorno: 1/);
+  assert.doesNotMatch(message.summaryText, /Resumen de incidentes|Contactos entre autos agrupados/);
   assert.match(message.summaryText, /Misil nuclear/);
 });
 

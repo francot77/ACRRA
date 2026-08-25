@@ -183,10 +183,11 @@ test('configured webhook sends exactly one request with the required race report
 
   assert.equal(body.content, '🏁 Race Report - monza');
   assert.equal(embed?.title, '🏁 Race Report - monza');
-  assert.match(embed?.description ?? '', /Auto principal: lotus_exos_125_s1/);
-  assert.match(embed?.description ?? '', /Vueltas pactadas: 3/);
+  assert.match(embed?.description ?? '', /Car model: lotus_exos_125_s1/);
+  assert.match(embed?.description ?? '', /Race laps: 3/);
+  assert.match(embed?.description ?? '', /Drivers: 2 active · 2 finished · 0 DNF · 0 DNS/);
   assert.equal(embed?.footer?.text, 'Archivo procesado: sample-race.json');
-  assert.deepEqual(fieldNames, ['Podio', '⚡ Vuelta rápida', 'Premios', 'Safety', 'Resumen de incidentes']);
+  assert.deepEqual(fieldNames, ['Podio', '⚡ Vuelta rápida', 'Premios', 'Safety']);
   assert.doesNotMatch(awardsField?.value ?? '', /⚡ Vuelta rápida/);
   assert.match(awardsField?.value ?? '', /🧼 Más limpio/);
   assert.match(awardsField?.value ?? '', /🧱 Albañil del día/);
@@ -349,7 +350,6 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
   const embed = message.webhookBody.embeds[0];
   const awardsField = embed.fields.find((field) => field.name === 'Premios');
   const podiumField = embed.fields.find((field) => field.name === 'Podio');
-  const incidentsField = embed.fields.find((field) => field.name === 'Resumen de incidentes');
 
   const safetyField = embed.fields.find((field) => field.name === 'Safety');
 
@@ -364,9 +364,7 @@ test('report excludes DNS from awards, marks DNF and DNS, and formats impacts wi
   assert.doesNotMatch(awardsField?.value ?? '', /\b\d+(?:\.\d+)? ms\b/);
   assert.doesNotMatch(safetyField?.value ?? '', /DNS Driver/);
   assert.match(safetyField?.value ?? '', /P3 Crash Driver \(DNF 0\/3 vueltas\): 80\.00 -> 76\.85/);
-  assert.match(incidentsField?.value ?? '', /Impacto máximo entre autos: 140\.00/);
-  assert.match(incidentsField?.value ?? '', /Impacto máximo con entorno: 70\.00/);
-  assert.match(incidentsField?.value ?? '', /Impacto máximo total: 140\.00/);
+  assert.doesNotMatch(message.summaryText, /Resumen de incidentes/);
 });
 
 test('report explains unchanged safety below the active-driver minimum without placeholder awards', () => {
@@ -606,7 +604,7 @@ test('report marks two-active-driver race as no puntuable and omits dns plus old
   const safety = embed.fields.find((field) => field.name === 'Safety')?.value ?? '';
 
   assert.match(safety, /No puntuable: 2 pilotos activos\. Mínimo requerido: 3\./);
-  assert.doesNotMatch(message.summaryText, /DNS/);
+  assert.match(message.summaryText, /Drivers: 2 active · 1 finished · 1 DNF · 1 DNS/);
   assert.doesNotMatch(message.summaryText, /Safety actualizada|Safety sin cambios/);
   assert.doesNotMatch(podium, /DNS Driver/);
 });

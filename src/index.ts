@@ -6,13 +6,10 @@ import { buildRaceMessage } from './discord/buildRaceMessage';
 import { sendWebhook } from './discord/sendWebhook';
 import { openDatabase } from './db/db';
 import { createRepositories, Repositories } from './db/repositories';
-import { startAcUdpClient } from './live/acUdpClient';
 import { applySafetyRatings } from './parser/calculateSafety';
 import { calculateDriverStats } from './parser/calculateDriverStats';
 import { groupIncidents } from './parser/groupIncidents';
 import { NonRaceSessionError, parseRaceJson } from './parser/parseRaceJson';
-import { loadTrackModelRuntime } from './track/trackModelAdapter';
-import type { TrackRuntimeModel } from './track/trackTypes';
 import { ParsedCarCollisionEvent } from './types/assetto';
 import { watchRaceResults } from './watcher';
 import { DailyRaceScheduler, SqliteRunSlotStore } from './scoring/scheduler';
@@ -20,20 +17,17 @@ import { ScoringRunService } from './scoring/service';
 import { ScoringStore } from './scoring/store';
 
 type BootstrapRuntime = {
-  trackRuntime: TrackRuntimeModel;
   database: ReturnType<typeof openDatabase>;
   repositories: Repositories;
   processRaceFile: ReturnType<typeof createRaceProcessor>;
-  liveUdpClient: Awaited<ReturnType<typeof startAcUdpClient>> | null;
+  liveUdpClient: null;
   watcher: Awaited<ReturnType<typeof watchRaceResults>>;
   scoringScheduler: DailyRaceScheduler | null;
 };
 
 type BootstrapDependencies = {
-  loadTrackRuntime?: (config: AppConfig) => TrackRuntimeModel;
   openDatabase?: typeof openDatabase;
   createRepositories?: typeof createRepositories;
-  startAcUdpClient?: typeof startAcUdpClient;
   watchRaceResults?: typeof watchRaceResults;
 };
 
@@ -129,16 +123,11 @@ export async function main(): Promise<void> {
     resultsDir: config.resultsDir,
     watchGlob: config.watchGlob,
     processedFileStrategy: config.processedFileStrategy,
-    liveUdpEnabled: config.liveUdpEnabled,
-    liveUdpSmokeGateReady: runtime.liveUdpClient?.getStatus().smokeGate.ready ?? false,
-    trackModelPath: config.trackModelPath,
-    trackModelTrack: runtime.trackRuntime.track,
-    trackModelLayout: runtime.trackRuntime.layout
+    liveUdpEnabled: false,
   });
 
   const shutdown = async (signal: string): Promise<void> => {
     log('info', 'bootstrap', 'Shutting down AC race monitor', { signal });
-    await runtime.liveUdpClient?.close();
     await runtime.watcher.close();
     runtime.scoringScheduler?.stop();
     runtime.database.close();
@@ -157,18 +146,14 @@ export async function bootstrapApplication(
   config: AppConfig,
   dependencies: BootstrapDependencies = {}
 ): Promise<BootstrapRuntime> {
-  const loadTrackRuntime = dependencies.loadTrackRuntime ?? loadTrackContextRuntime;
   const openDatabaseDependency = dependencies.openDatabase ?? openDatabase;
   const createRepositoriesDependency = dependencies.createRepositories ?? createRepositories;
-  const startAcUdpClientDependency = dependencies.startAcUdpClient ?? startAcUdpClient;
   const watchRaceResultsDependency = dependencies.watchRaceResults ?? watchRaceResults;
 
-  const trackRuntime = loadTrackRuntime(config);
   const database = openDatabaseDependency(config.databasePath, { archiveDirectory: config.databaseArchiveDirectory ?? undefined });
   const repositories = createRepositoriesDependency(database);
   const processRaceFile = createRaceProcessor(config, repositories);
   // Legacy UDP and incident orchestration is intentionally quarantined.
-  void startAcUdpClientDependency;
   const liveUdpClient = null;
   const watcher = await watchRaceResultsDependency({ config, repositories, processFile: processRaceFile });
   const scoringScheduler = config.scoringEnabled
@@ -190,7 +175,6 @@ export async function bootstrapApplication(
   scoringScheduler?.start();
 
   return {
-    trackRuntime,
     database,
     repositories,
     processRaceFile,
@@ -198,14 +182,6 @@ export async function bootstrapApplication(
     watcher,
     scoringScheduler,
   };
-}
-
-export function loadTrackContextRuntime(config: AppConfig): TrackRuntimeModel {
-  return loadTrackModelRuntime({
-    modelPath: config.trackModelPath,
-    expectedTrack: config.trackModelTrack,
-    expectedLayout: config.trackModelLayout,
-  });
 }
 
 function log(level: 'info' | 'warn' | 'error', component: string, message: string, fields: Record<string, unknown>): void {

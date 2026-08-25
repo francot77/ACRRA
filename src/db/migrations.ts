@@ -23,7 +23,7 @@ export type IncidentArchive = {
   liveIncidentSnapshots: Record<string, unknown>[];
 };
 
-export const DATABASE_SCHEMA_VERSION = 6;
+export const DATABASE_SCHEMA_VERSION = 7;
 
 /**
  * Migration 1 adds compatibility columns before migration 2 performs the
@@ -120,6 +120,19 @@ export const migrations: readonly DatabaseMigration[] = [
         INSERT INTO scoring_run_slots SELECT * FROM scoring_run_slots_previous;
         DROP TABLE scoring_run_slots_previous;
       `);
+    }
+  },
+  {
+    version: 7,
+    name: 'persist-scoring-results-for-standings',
+    apply(database) {
+      database.exec(`CREATE TABLE IF NOT EXISTS scoring_results (
+        run_id TEXT NOT NULL REFERENCES scoring_runs(run_id),
+        driver_id INTEGER NOT NULL REFERENCES scoring_drivers(id),
+        position INTEGER NOT NULL,
+        classified INTEGER NOT NULL,
+        PRIMARY KEY (run_id, driver_id)
+      )`);
     }
   }
 ];

@@ -69,19 +69,17 @@ export function buildRaceMessage(input: {
   const safetySummary = safetyEligible
     ? safetyUpdated || 'Sin cambios'
     : `No puntuable: ${activeDrivers} pilotos activos. Mínimo requerido: ${input.minActiveDriversForSafetyGain}.`;
-  const incidentSummary = [
-    `Contactos entre autos agrupados: ${input.groupedIncidents.length}`,
-    `Eventos crudos entre autos: ${sum(input.groupedIncidents.map((entry) => entry.rawEventCount))}`,
-    `Golpes con entorno: ${sum(input.stats.map((entry) => entry.envHits))}`,
-    `Impacto máximo entre autos: ${Math.max(0, ...input.stats.map((entry) => entry.maxCarImpact)).toFixed(2)}`,
-    `Impacto máximo con entorno: ${Math.max(0, ...input.stats.map((entry) => entry.maxEnvImpact)).toFixed(2)}`,
-    `Impacto máximo total: ${Math.max(0, ...input.stats.map((entry) => entry.maxImpact)).toFixed(2)}`
-  ].join('\n');
   const awards = buildAwards(input.stats, input.groupedIncidents, input.nuclearMissileMinCarImpactKmh);
   const awardText = awards.map((award) => `${award.label}: ${award.value}`).join('\n');
+  const finishedDrivers = input.stats.filter((entry) => entry.active && entry.finished).length;
+  const dnfDrivers = input.stats.filter((entry) => entry.active && !entry.finished).length;
+  const dnsDrivers = input.stats.filter((entry) => entry.inactive).length;
   const description = [
-    `Auto principal: ${input.race.carModel ?? 'unknown'}`,
-    `Vueltas pactadas: ${input.race.raceLaps}`
+    `Track: ${input.race.trackName}`,
+    ...(input.race.trackConfig?.trim() ? [`Layout: ${input.race.trackConfig}`] : []),
+    `Race laps: ${input.race.raceLaps}`,
+    `Car model: ${input.race.carModel ?? 'unknown'}`,
+    `Drivers: ${activeDrivers} active · ${finishedDrivers} finished · ${dnfDrivers} DNF · ${dnsDrivers} DNS`
   ].join('\n');
   const footerText = `Archivo procesado: ${input.fileName}`;
   const embed: DiscordEmbed = {
@@ -96,8 +94,7 @@ export function buildRaceMessage(input: {
         inline: true
       },
       { name: 'Premios', value: awardText, inline: false },
-      { name: 'Safety', value: safetySummary, inline: false },
-      { name: 'Resumen de incidentes', value: incidentSummary, inline: false }
+      { name: 'Safety', value: safetySummary, inline: false }
     ],
     footer: { text: footerText }
   };
@@ -116,9 +113,6 @@ export function buildRaceMessage(input: {
       '',
       'Safety',
       safetySummary,
-      '',
-      'Resumen de incidentes',
-      incidentSummary,
       '',
       footerText
     ].join('\n'),
@@ -280,8 +274,4 @@ function pickOne<T>(values: T[], compare: (left: T, right: T) => number): T | nu
 
 function compareNumbers(left: number | null | undefined, right: number | null | undefined): number {
   return (left ?? Number.POSITIVE_INFINITY) - (right ?? Number.POSITIVE_INFINITY);
-}
-
-function sum(values: number[]): number {
-  return values.reduce((total, value) => total + value, 0);
 }

@@ -27,6 +27,13 @@ services:
       SCAN_ON_START: ${SCAN_ON_START:-true}
       MIN_FILE_AGE_MS: ${MIN_FILE_AGE_MS:-3000}
       WATCH_GLOB: ${WATCH_GLOB:-*RACE*.json}
+      SCORING_ENABLED: ${SCORING_ENABLED:-false}
+      SCORING_SOURCE_GLOB: ${SCORING_SOURCE_GLOB:-*_RACE.json}
+      SCORING_SCHEDULE: ${SCORING_SCHEDULE:-0 21 * * *}
+      SCORING_TIMEZONE: ${SCORING_TIMEZONE:-America/Argentina/Buenos_Aires}
+      SCORING_RACE_WINDOW_MINUTES: ${SCORING_RACE_WINDOW_MINUTES:-60}
+      SCORING_DST_POLICY: ${SCORING_DST_POLICY:-reject-ambiguous}
+      SCORING_RESULTS_WEBHOOK_URL: ${SCORING_RESULTS_WEBHOOK_URL:-}
       DEFAULT_SAFETY_RATING: ${DEFAULT_SAFETY_RATING:-75}
       SAFETY_MEMORY_FACTOR: ${SAFETY_MEMORY_FACTOR:-0.85}
       MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN: ${MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN:-3}
@@ -35,4 +42,3 @@ services:
     volumes:
       - ${HOST_ASSETTO_RESULTS_DIR:-/opt/assetto/server/results}:/app/results:ro
       - ${HOST_MONITOR_DATA_DIR:-/opt/ac-race-monitor/data}:/app/data
-      - ./track-models:/app/track-models:ro

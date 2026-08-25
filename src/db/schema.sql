@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS scoring_drivers (id INTEGER PRIMARY KEY AUTOINCREMENT
 CREATE TABLE IF NOT EXISTS scoring_driver_aliases (normalized_name TEXT PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES scoring_drivers(id));
 CREATE TABLE IF NOT EXISTS scoring_runs (run_id TEXT PRIMARY KEY, race_id TEXT NOT NULL, committed_at TEXT NOT NULL, UNIQUE (race_id, run_id));
 CREATE TABLE IF NOT EXISTS championship_awards (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL REFERENCES scoring_runs(run_id), driver_id INTEGER NOT NULL REFERENCES scoring_drivers(id), driver_name TEXT NOT NULL, position INTEGER NOT NULL, points INTEGER NOT NULL, UNIQUE (run_id, driver_id));
+CREATE TABLE IF NOT EXISTS scoring_results (run_id TEXT NOT NULL REFERENCES scoring_runs(run_id), driver_id INTEGER NOT NULL REFERENCES scoring_drivers(id), position INTEGER NOT NULL, classified INTEGER NOT NULL, PRIMARY KEY (run_id, driver_id));
 CREATE TABLE IF NOT EXISTS scoring_report_outbox (
   report_id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL UNIQUE REFERENCES scoring_runs(run_id),
