@@ -109,7 +109,7 @@ test('empty webhook falls back to console logging without crashing', async (t) =
   const payload = JSON.parse(infoLogs[0] ?? '{}') as { message?: string; summary?: string };
   assert.equal(payload.message, 'Discord webhook disabled, logging race summary instead');
   assert.match(payload.summary ?? '', /🏁 monza · Race complete/);
-  assert.match(payload.summary ?? '', /Archivo procesado: sample-race.json/);
+  assert.doesNotMatch(payload.summary ?? '', /Archivo procesado/);
 });
 
 test('configured webhook sends exactly one request with the required race report contract', async (t) => {
@@ -183,11 +183,11 @@ test('configured webhook sends exactly one request with the required race report
 
   assert.equal(body.content, '');
   assert.equal(embed?.title, '🏁 monza · Race complete');
-  assert.equal(embed?.description, 'Resultado final · datos del JSON de carrera');
+  assert.equal(embed?.description, 'Resultado oficial de la carrera');
   assert.match(embed?.fields.find((field) => field.name === '🏁 Carrera')?.value ?? '', /lotus_exos_125_s1/);
   assert.match(embed?.fields.find((field) => field.name === '🏁 Carrera')?.value ?? '', /3 vueltas/);
   assert.match(embed?.fields.find((field) => field.name === '📊 Pilotos')?.value ?? '', /2 activos · 2 finalizados/);
-  assert.equal(embed?.footer?.text, 'Archivo procesado: sample-race.json');
+  assert.equal(embed?.footer?.text, 'ACRRA · Resultado oficial');
   assert.deepEqual(fieldNames, ['Podio', '🏁 Carrera', '📊 Pilotos', '⚡ Vuelta rápida', 'Safety', 'Premios']);
   assert.doesNotMatch(awardsField?.value ?? '', /⚡ Vuelta rápida/);
   assert.match(awardsField?.value ?? '', /🧼 Más limpio/);

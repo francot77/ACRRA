@@ -76,14 +76,13 @@ export function buildRaceMessage(input: {
   const finishedDrivers = input.stats.filter((entry) => entry.active && entry.finished).length;
   const dnfDrivers = input.stats.filter((entry) => entry.active && !entry.finished).length;
   const dnsDrivers = input.stats.filter((entry) => entry.inactive).length;
-  const description = 'Resultado final · datos del JSON de carrera';
+  const description = 'Resultado oficial de la carrera';
   const raceInfo = [
     `📍 ${truncate(input.race.trackName, 40)}`,
     `🛣️ ${truncate(input.race.trackConfig?.trim() || 'Layout standard', 40)}`,
     `🔁 ${input.race.raceLaps} vueltas · 🚗 ${truncate(input.race.carModel ?? 'unknown', 40)}`
   ].join('\n');
   const driverInfo = `${activeDrivers} activos · ${finishedDrivers} finalizados\n${dnfDrivers} DNF · ${dnsDrivers} DNS`;
-  const footerText = `Archivo procesado: ${truncate(input.fileName, 2000)}`;
   const embed: DiscordEmbed = {
     title,
     description,
@@ -100,7 +99,7 @@ export function buildRaceMessage(input: {
       { name: 'Safety', value: truncate(safetySummary, 1024), inline: true },
       { name: 'Premios', value: truncate(awardText, 1024), inline: false }
     ],
-    footer: { text: footerText }
+    footer: { text: 'ACRRA · Resultado oficial' }
   };
 
   return {
@@ -118,7 +117,6 @@ export function buildRaceMessage(input: {
       'Safety',
       safetySummary,
       '',
-      footerText
     ].join('\n'),
     webhookBody: {
       content: '',
