@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import test from 'node:test';
 import type { RemoteInfo, Socket } from 'node:dgram';
 import type { AppConfig } from '../../src/config';
 import { startAcUdpClient, type LiveLogger } from '../../src/live/acUdpClient';
-import { parseTrackModelRuntime } from '../../src/track/trackModelAdapter';
 
 test('acUdpClient uses the real realtime enable packet and logs real packet semantics when live UDP debug is enabled', async () => {
   const socket = new FakeSocket();
@@ -150,29 +147,6 @@ test('acUdpClient aggregates per-window packet counts in the incident debug summ
     windowCollisionWithEnvCount: 1,
     windowUnknownPacketCount: 1,
   });
-
-  await client.close();
-});
-
-test('acUdpClient wires optional track runtime into snapshot and incident enrichment without changing fallbacks', async () => {
-  const socket = new FakeSocket();
-
-  const client = await startAcUdpClient(createConfig({ incidentPostMs: 1 }), {
-    socketFactory: () => socket as unknown as Socket,
-    logger: () => undefined,
-    trackRuntime: loadMonzaRuntime(),
-  });
-
-  socket.emitMessage(createCarUpdatePacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 33 });
-  socket.emitMessage(createCollisionWithEnvPacket(), { address: '127.0.0.1', family: 'IPv4', port: 11000, size: 31 });
-
-  await sleep(10);
-
-  const snapshots = client.getSnapshots(7, 0, Number.MAX_SAFE_INTEGER);
-  const incidents = client.getFinalizedIncidents();
-
-  assert.equal(snapshots[0]?.trackContext?.source, 'progress');
-  assert.equal(incidents[0]?.trackContext?.source, 'world_position');
 
   await client.close();
 });
@@ -362,10 +336,6 @@ function createCollisionWithEnvPacket(): Buffer {
 
 function createUnknownPacket(): Buffer {
   return Buffer.from([0xde, 0xad, 0xbe, 0xef]);
-}
-
-function loadMonzaRuntime() {
-  return parseTrackModelRuntime(JSON.parse(readFileSync(resolve('track-models/monza/track-model.json'), 'utf8')));
 }
 
 function sleep(ms: number): Promise<void> {

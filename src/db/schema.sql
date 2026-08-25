@@ -1,5 +1,15 @@
 PRAGMA foreign_keys = ON;
 
+-- Schema version 5 adds the Phase-2 scoring outbox. Race exports, results,
+-- drivers, safety ratings, and processed filenames are authoritative data.
+-- Legacy live incident/snapshot tables are intentionally absent from fresh DBs;
+-- migration 2 archives and removes them from existing DBs.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS processed_files (
   file_name TEXT PRIMARY KEY,
   file_path TEXT NOT NULL,
@@ -52,55 +62,25 @@ CREATE TABLE IF NOT EXISTS race_driver_results (
   FOREIGN KEY (guid) REFERENCES drivers(guid)
 );
 
-CREATE TABLE IF NOT EXISTS live_incidents (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  incident_uid TEXT UNIQUE NOT NULL,
-  race_id INTEGER,
-  type TEXT NOT NULL,
-  car_id INTEGER NOT NULL,
-  other_car_id INTEGER,
-  impact_speed REAL NOT NULL,
-  world_pos_x REAL NOT NULL,
-  world_pos_y REAL NOT NULL,
-  world_pos_z REAL NOT NULL,
-  rel_pos_x REAL,
-  rel_pos_y REAL,
-  rel_pos_z REAL,
+CREATE TABLE IF NOT EXISTS scoring_run_slots (
+  slot_key TEXT PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'claimed', 'expired')),
+  source_file_name TEXT,
+  source_file_hash TEXT,
+  claimed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS scoring_drivers (id INTEGER PRIMARY KEY AUTOINCREMENT, guid TEXT UNIQUE, display_name TEXT NOT NULL, normalized_name TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS scoring_driver_aliases (normalized_name TEXT PRIMARY KEY, driver_id INTEGER NOT NULL REFERENCES scoring_drivers(id));
+CREATE TABLE IF NOT EXISTS scoring_runs (run_id TEXT PRIMARY KEY, race_id TEXT NOT NULL, committed_at TEXT NOT NULL, UNIQUE (race_id, run_id));
+CREATE TABLE IF NOT EXISTS championship_awards (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL REFERENCES scoring_runs(run_id), driver_id INTEGER NOT NULL REFERENCES scoring_drivers(id), driver_name TEXT NOT NULL, position INTEGER NOT NULL, points INTEGER NOT NULL, UNIQUE (run_id, driver_id));
+CREATE TABLE IF NOT EXISTS scoring_report_outbox (
+  report_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL UNIQUE REFERENCES scoring_runs(run_id),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'failed-retryable')),
+  payload_json TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
   created_at TEXT NOT NULL,
-  first_received_at TEXT NOT NULL,
-  last_received_at TEXT NOT NULL,
-  capture_start_ms INTEGER NOT NULL,
-  capture_end_ms INTEGER NOT NULL,
-  matched INTEGER NOT NULL DEFAULT 0,
-  matched_at TEXT,
-  verdict_type TEXT,
-  verdict_confidence REAL,
-  verdict_blamed_car_id INTEGER,
-  verdict_explanation_json TEXT,
-  FOREIGN KEY (race_id) REFERENCES races(id)
+  sent_at TEXT
 );
-
-CREATE INDEX IF NOT EXISTS idx_live_incidents_race_id ON live_incidents(race_id);
-CREATE INDEX IF NOT EXISTS idx_live_incidents_created_at ON live_incidents(created_at);
-
-CREATE TABLE IF NOT EXISTS live_incident_snapshots (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  incident_id INTEGER NOT NULL,
-  relative_ms INTEGER NOT NULL,
-  car_id INTEGER NOT NULL,
-  snapshot_received_at TEXT NOT NULL,
-  pos_x REAL NOT NULL,
-  pos_y REAL NOT NULL,
-  pos_z REAL NOT NULL,
-  vel_x REAL NOT NULL,
-  vel_y REAL NOT NULL,
-  vel_z REAL NOT NULL,
-  speed_kmh REAL NOT NULL,
-  gear INTEGER,
-  engine_rpm INTEGER,
-  normalized_spline_pos REAL,
-  FOREIGN KEY (incident_id) REFERENCES live_incidents(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_live_incident_snapshots_incident_id
-  ON live_incident_snapshots(incident_id);

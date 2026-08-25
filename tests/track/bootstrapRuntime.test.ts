@@ -11,7 +11,7 @@ test('loadConfig normalizes a blank TRACK_MODEL_LAYOUT to null', () => {
   assert.equal(config.trackModelLayout, null);
 });
 
-test('bootstrapApplication loads the track runtime before database, UDP, and watcher startup', async () => {
+test('bootstrapApplication ignores legacy UDP startup settings', async () => {
   const modelPath = writeTrackModelFixture();
   const calls: string[] = [];
   let receivedTrackRuntime: { track: string; layout: string | null } | null = null;
@@ -66,12 +66,11 @@ test('bootstrapApplication loads the track runtime before database, UDP, and wat
     'loadTrackRuntime',
     'openDatabase',
     'createRepositories',
-    'startAcUdpClient',
     'watchRaceResults',
   ]);
   assert.equal(runtime.trackRuntime.track, 'monza');
   assert.equal(runtime.trackRuntime.layout, null);
-  assert.deepEqual(receivedTrackRuntime, { track: 'monza', layout: null });
+  assert.equal(receivedTrackRuntime, null);
 });
 
 test('bootstrapApplication fails fast on invalid track model input before downstream startup', async () => {

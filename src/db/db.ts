@@ -1,36 +1,50 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { applyMigrations } from './migrations';
 
 export type AppDatabase = DatabaseSync;
 
-export function openDatabase(databasePath: string): AppDatabase {
+export type DatabaseBackup = {
+  databasePath: string;
+  walPath: string | null;
+  shmPath: string | null;
+};
+
+export function openDatabase(databasePath: string, options: { archiveDirectory?: string } = {}): AppDatabase {
   mkdirSync(dirname(databasePath), { recursive: true });
-
+  const hadDatabase = existsSync(databasePath);
   const database = new DatabaseSync(databasePath);
-  database.exec(readFileSync(resolve(process.cwd(), 'src/db/schema.sql'), 'utf8'));
-  ensureLiveIncidentVerdictColumns(database);
 
+  if (hadDatabase) {
+    backupDatabase(databasePath);
+  }
+
+  database.exec(readFileSync(resolve(process.cwd(), 'src/db/schema.sql'), 'utf8'));
+  applyMigrations(database, undefined, { databasePath, archiveDirectory: options.archiveDirectory });
   return database;
 }
 
-function ensureLiveIncidentVerdictColumns(database: AppDatabase): void {
-  const rows = database.prepare('PRAGMA table_info(live_incidents)').all() as Array<{ name: string }>;
-  const columnNames = new Set(rows.map((row) => row.name));
+/** Create a recoverable copy before schema writes. Existing WAL sidecars are copied too. */
+export function backupDatabase(databasePath: string, destinationPath = `${databasePath}.backup-${Date.now()}`): DatabaseBackup {
+  const walSource = `${databasePath}-wal`;
+  const shmSource = `${databasePath}-shm`;
+  const walPath = existsSync(walSource) ? `${destinationPath}-wal` : null;
+  const shmPath = existsSync(shmSource) ? `${destinationPath}-shm` : null;
 
-  if (!columnNames.has('verdict_type')) {
-    database.exec('ALTER TABLE live_incidents ADD COLUMN verdict_type TEXT');
+  copyFileSync(databasePath, destinationPath);
+  if (walPath) copyFileSync(walSource, walPath);
+  if (shmPath) copyFileSync(shmSource, shmPath);
+
+  const verification = new DatabaseSync(destinationPath);
+  try {
+    const result = verification.prepare('PRAGMA integrity_check').get() as { integrity_check: string };
+    if (result.integrity_check !== 'ok') {
+      throw new Error(`SQLite backup integrity check failed: ${result.integrity_check}`);
+    }
+  } finally {
+    verification.close();
   }
 
-  if (!columnNames.has('verdict_confidence')) {
-    database.exec('ALTER TABLE live_incidents ADD COLUMN verdict_confidence REAL');
-  }
-
-  if (!columnNames.has('verdict_blamed_car_id')) {
-    database.exec('ALTER TABLE live_incidents ADD COLUMN verdict_blamed_car_id INTEGER');
-  }
-
-  if (!columnNames.has('verdict_explanation_json')) {
-    database.exec('ALTER TABLE live_incidents ADD COLUMN verdict_explanation_json TEXT');
-  }
+  return { databasePath: destinationPath, walPath, shmPath };
 }

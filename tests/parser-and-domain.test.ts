@@ -80,6 +80,7 @@ test('safety formula, rolling rating, and categories follow the frozen contract'
     totalCuts: 3,
     maxImpact: 130,
     finished: true,
+    destructiveDnf: false,
     completedLaps: 3
   });
 

@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import test from 'node:test';
 import { inferTurnSide } from '../../src/incidents/incidentVerdictGeometry';
-import { parseTrackModelRuntime } from '../../src/track/trackModelAdapter';
 import { TrackQueryService } from '../../src/track/trackQueryService';
 import type { TrackRuntimeModel } from '../../src/track/trackTypes';
 
-test('track query service resolves Monza default layout identities with blank session config normalization', () => {
-  const service = new TrackQueryService(loadMonzaRuntime());
+test('track query service normalizes blank default-layout identities', () => {
+  const service = new TrackQueryService(createRuntime([
+    createPoint({ index: 0, normalized: 0 }),
+  ]));
 
   assert.equal(service.resolveTrack({ trackName: 'monza', trackConfig: '' }), true);
   assert.equal(service.resolveTrack({ trackName: 'monza', trackConfig: '   ' }), true);
@@ -65,10 +64,6 @@ test('track query service neighboring seam feeds deterministic left-turn inputs 
 
   assert.equal(turnSide, 'left');
 });
-
-function loadMonzaRuntime(): TrackRuntimeModel {
-  return parseTrackModelRuntime(JSON.parse(readFileSync(resolve('track-models/monza/track-model.json'), 'utf8')));
-}
 
 function createRuntime(points: TrackRuntimeModel['points']): TrackRuntimeModel {
   return Object.freeze({

@@ -1,25 +1,23 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { AppConfig, loadConfig } from './config';
+import { AppConfig, getConfiguredDeprecatedLegacySettings, loadConfig } from './config';
 import { buildRaceMessage } from './discord/buildRaceMessage';
-import { sendIncidentReports } from './discord/sendIncidentReport';
 import { sendWebhook } from './discord/sendWebhook';
 import { openDatabase } from './db/db';
 import { createRepositories, Repositories } from './db/repositories';
-import { analyzeIncidentVerdict } from './incidents/analyzeIncidentVerdict';
-import type { VerdictTrackContextInput } from './incidents/incidentVerdictGeometry';
 import { startAcUdpClient } from './live/acUdpClient';
-import { extractRaceCollisionEvents, matchLiveIncidentsToRaceEvents } from './live/matchLiveIncidents';
 import { applySafetyRatings } from './parser/calculateSafety';
 import { calculateDriverStats } from './parser/calculateDriverStats';
 import { groupIncidents } from './parser/groupIncidents';
 import { NonRaceSessionError, parseRaceJson } from './parser/parseRaceJson';
 import { loadTrackModelRuntime } from './track/trackModelAdapter';
-import { TrackQueryService } from './track/trackQueryService';
 import type { TrackRuntimeModel } from './track/trackTypes';
 import { ParsedCarCollisionEvent } from './types/assetto';
 import { watchRaceResults } from './watcher';
+import { DailyRaceScheduler, SqliteRunSlotStore } from './scoring/scheduler';
+import { ScoringRunService } from './scoring/service';
+import { ScoringStore } from './scoring/store';
 
 type BootstrapRuntime = {
   trackRuntime: TrackRuntimeModel;
@@ -28,6 +26,7 @@ type BootstrapRuntime = {
   processRaceFile: ReturnType<typeof createRaceProcessor>;
   liveUdpClient: Awaited<ReturnType<typeof startAcUdpClient>> | null;
   watcher: Awaited<ReturnType<typeof watchRaceResults>>;
+  scoringScheduler: DailyRaceScheduler | null;
 };
 
 type BootstrapDependencies = {
@@ -40,8 +39,7 @@ type BootstrapDependencies = {
 
 export function createRaceProcessor(
   config: AppConfig,
-  repositories: Repositories,
-  verdictTrackInput?: VerdictTrackContextInput
+  repositories: Repositories
 ) {
   return async function processRaceFile(filePath: string): Promise<'processed' | 'duplicate' | 'non-race'> {
     const fileName = basename(filePath);
@@ -103,65 +101,6 @@ export function createRaceProcessor(
       skippedTempDrivers: ratedDriverStats.filter((entry) => !entry.guid).length
     });
 
-    let incidentsForReporting: Array<{
-      liveIncident: (ReturnType<typeof repositories.liveIncidents.listPendingMatch>)[number];
-      jsonIncident: ReturnType<typeof extractRaceCollisionEvents>[number];
-      match: ReturnType<typeof matchLiveIncidentsToRaceEvents>['matched'][number];
-    }> = [];
-
-    try {
-      const pendingLiveIncidents = repositories.liveIncidents.listPendingMatch();
-      const jsonIncidents = extractRaceCollisionEvents(race);
-      const matchResult = matchLiveIncidentsToRaceEvents(pendingLiveIncidents, jsonIncidents, {
-        maxDistanceM: config.incidentMatchMaxDistanceM,
-        maxImpactDiffKmh: config.incidentMatchMaxImpactDiffKmh,
-      });
-
-      for (const match of matchResult.matched) {
-        const liveIncident = pendingLiveIncidents.find((incident) => incident.id === match.liveIncidentId);
-        const jsonIncident = jsonIncidents.find((incident) => incident.eventIndex === match.jsonEventIndex);
-        const verdict = liveIncident ? analyzeIncidentVerdict(liveIncident, verdictTrackInput) : undefined;
-        const matchedAt = new Date().toISOString();
-        repositories.liveIncidents.markMatched(
-          match.liveIncidentId,
-          persistence.raceId,
-          matchedAt,
-          verdict
-        );
-
-        if (liveIncident && jsonIncident) {
-          incidentsForReporting.push({
-            liveIncident: {
-              ...liveIncident,
-              raceId: persistence.raceId,
-              matched: true,
-              matchedAt,
-              verdictType: verdict?.type ?? null,
-              verdictConfidence: verdict?.confidence ?? null,
-              verdictBlamedCarId: verdict?.blamedCarId ?? null,
-              verdictExplanation: verdict?.explanation ?? []
-            },
-            jsonIncident,
-            match
-          });
-        }
-      }
-
-      log('info', 'processor', 'Matched persisted live incidents against race JSON', {
-        fileName,
-        raceId: persistence.raceId,
-        matched: matchResult.matched.length,
-        liveOnly: matchResult.liveOnly.length,
-        jsonOnly: matchResult.jsonOnly.length,
-        unmatched: matchResult.unmatched.length,
-      });
-    } catch (error) {
-      log('warn', 'processor', 'Live incident matching skipped after race persistence error', {
-        fileName,
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-
     const raceMessage = buildRaceMessage({
       fileName,
       race,
@@ -171,33 +110,6 @@ export function createRaceProcessor(
       nuclearMissileMinCarImpactKmh: config.nuclearMissileMinCarImpactKmh
     });
     await sendWebhook(config.discordWebhookUrl, raceMessage);
-    const incidentReportResult = await sendIncidentReports({
-      enabled: config.incidentsWebhookEnabled,
-      webhookUrl: config.incidentsDiscordWebhookUrl,
-      fileName,
-      race,
-      incidents: incidentsForReporting,
-      reconstructionTrackContext: verdictTrackInput,
-    });
-
-    if (incidentReportResult.deliveredIncidentIds.length > 0) {
-      try {
-        const deletedIncidents = repositories.liveIncidents.deleteMatched(incidentReportResult.deliveredIncidentIds);
-        log('info', 'processor', 'Cleaned up delivered live incidents from SQLite', {
-          fileName,
-          raceId: persistence.raceId,
-          deliveredIncidentReports: incidentReportResult.deliveredIncidentIds.length,
-          deletedIncidents,
-        });
-      } catch (error) {
-        log('warn', 'processor', 'Failed to clean up delivered live incidents from SQLite', {
-          fileName,
-          raceId: persistence.raceId,
-          deliveredIncidentReports: incidentReportResult.deliveredIncidentIds.length,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
 
     return 'processed';
   };
@@ -205,6 +117,12 @@ export function createRaceProcessor(
 
 export async function main(): Promise<void> {
   const config = loadConfig();
+  const deprecatedSettings = getConfiguredDeprecatedLegacySettings();
+  if (deprecatedSettings.length > 0) {
+    log('warn', 'bootstrap', 'Legacy UDP and incident settings are deprecated and ignored; file race exports remain authoritative', {
+      settings: deprecatedSettings
+    });
+  }
   const runtime = await bootstrapApplication(config);
 
   log('info', 'bootstrap', 'AC race monitor started', {
@@ -222,6 +140,7 @@ export async function main(): Promise<void> {
     log('info', 'bootstrap', 'Shutting down AC race monitor', { signal });
     await runtime.liveUdpClient?.close();
     await runtime.watcher.close();
+    runtime.scoringScheduler?.stop();
     runtime.database.close();
     process.exit(0);
   };
@@ -245,23 +164,30 @@ export async function bootstrapApplication(
   const watchRaceResultsDependency = dependencies.watchRaceResults ?? watchRaceResults;
 
   const trackRuntime = loadTrackRuntime(config);
-  const database = openDatabaseDependency(config.databasePath);
+  const database = openDatabaseDependency(config.databasePath, { archiveDirectory: config.databaseArchiveDirectory ?? undefined });
   const repositories = createRepositoriesDependency(database);
-  const processRaceFile = createRaceProcessor(config, repositories, {
-    queryService: new TrackQueryService(trackRuntime),
-    sessionTrackIdentity: {
-      trackName: config.trackModelTrack,
-      trackConfig: config.trackModelLayout,
-    },
-  });
-  const liveUdpClient = config.liveUdpEnabled
-    ? await startAcUdpClientDependency(config, {
-        logger: log,
-        liveIncidentRepository: repositories.liveIncidents,
-        trackRuntime,
+  const processRaceFile = createRaceProcessor(config, repositories);
+  // Legacy UDP and incident orchestration is intentionally quarantined.
+  void startAcUdpClientDependency;
+  const liveUdpClient = null;
+  const watcher = await watchRaceResultsDependency({ config, repositories, processFile: processRaceFile });
+  const scoringScheduler = config.scoringEnabled
+    ? new DailyRaceScheduler({
+        source: {
+          resultsDir: config.resultsDir,
+          sourceGlob: config.scoringSourceGlob,
+           minFileAgeMs: config.minFileAgeMs,
+           raceWindowMinutes: config.scoringRaceWindowMinutes
+        },
+        store: new SqliteRunSlotStore(database),
+        timezone: config.scoringTimezone,
+        dstPolicy: config.scoringDstPolicy,
+        onClaim: async (slotKey, source) => {
+          await new ScoringRunService(new ScoringStore(database), config.scoringResultsWebhookUrl ?? '').process(slotKey, source);
+        }
       })
     : null;
-  const watcher = await watchRaceResultsDependency({ config, repositories, processFile: processRaceFile });
+  scoringScheduler?.start();
 
   return {
     trackRuntime,
@@ -270,6 +196,7 @@ export async function bootstrapApplication(
     processRaceFile,
     liveUdpClient,
     watcher,
+    scoringScheduler,
   };
 }
 

@@ -148,7 +148,8 @@ export function createRepositories(database: AppDatabase) {
     INSERT INTO processed_files (file_name, file_path, file_hash, processed_at)
     VALUES (@fileName, @filePath, @fileHash, @processedAt)
   `);
-  const insertLiveIncidentStatement = database.prepare(`
+  /* Legacy live-incident SQL is intentionally not prepared: migration 2 removes its tables. */
+  /*
     INSERT INTO live_incidents (
       incident_uid,
       race_id,
@@ -323,6 +324,7 @@ export function createRepositories(database: AppDatabase) {
     WHERE incident_id = ?
     ORDER BY relative_ms ASC, car_id ASC, id ASC
   `);
+  */
 
   return {
     processedFiles: {
@@ -427,139 +429,14 @@ export function createRepositories(database: AppDatabase) {
       }
     },
     liveIncidents: {
-      persist(input: PersistLiveIncidentInput): PersistLiveIncidentResult {
-        const representativeEvent = pickRepresentativeEvent(input.incident.events);
-
-        database.exec('BEGIN IMMEDIATE');
-
-        try {
-          const incidentInsert = insertLiveIncidentStatement.run({
-            incidentUid: input.incident.incidentId,
-            raceId: input.raceId ?? null,
-            type: input.incident.type,
-            carId: representativeEvent.carId,
-            otherCarId: representativeEvent.type === 'collision_with_car' ? representativeEvent.otherCarId : null,
-            impactSpeed: representativeEvent.impactSpeed,
-            worldPosX: representativeEvent.worldPosition.x,
-            worldPosY: representativeEvent.worldPosition.y,
-            worldPosZ: representativeEvent.worldPosition.z,
-            relPosX: representativeEvent.relativePosition.x,
-            relPosY: representativeEvent.relativePosition.y,
-            relPosZ: representativeEvent.relativePosition.z,
-            createdAt: representativeEvent.receivedAt,
-            firstReceivedAt: new Date(input.incident.firstReceivedAtMs).toISOString(),
-            lastReceivedAt: new Date(input.incident.lastReceivedAtMs).toISOString(),
-            captureStartMs: input.incident.captureStartMs,
-            captureEndMs: input.incident.captureEndMs,
-          });
-          const incidentId = Number(incidentInsert.lastInsertRowid);
-          let snapshotCount = 0;
-          const relativeToMs = representativeEvent.receivedAtMs;
-
-          for (const car of input.incident.cars) {
-            snapshotCount += persistSnapshots(
-              insertLiveIncidentSnapshotStatement,
-              incidentId,
-              relativeToMs,
-              car
-            );
-          }
-
-          database.exec('COMMIT');
-          return { status: 'inserted', incidentId, snapshotCount };
-        } catch (error) {
-          database.exec('ROLLBACK');
-
-          if (isUniqueConstraintError(error)) {
-            return { status: 'duplicate' };
-          }
-
-          throw error;
-        }
-      },
-      list(): PersistedLiveIncident[] {
-        return hydrateLiveIncidents(listLiveIncidentsStatement.all() as LiveIncidentRow[]);
-      },
-      listPendingMatch(): PersistedLiveIncident[] {
-        return hydrateLiveIncidents(listPendingLiveIncidentsStatement.all() as LiveIncidentRow[]);
-      },
-      markMatched(incidentId: number, raceId: number, matchedAt: string, verdict?: IncidentVerdict): boolean {
-        const result = markLiveIncidentMatchedStatement.run({
-          incidentId,
-          raceId,
-          matchedAt,
-          verdictType: verdict?.type ?? null,
-          verdictConfidence: verdict?.confidence ?? null,
-          verdictBlamedCarId: verdict?.blamedCarId ?? null,
-          verdictExplanationJson: verdict ? JSON.stringify(verdict.explanation) : null,
-        });
-        return Number(result.changes) > 0;
-      },
-      deleteMatched(incidentIds: number[]): number {
-        const uniqueIds = [...new Set(incidentIds.filter((id) => Number.isInteger(id) && id > 0))];
-        if (uniqueIds.length === 0) {
-          return 0;
-        }
-
-        const placeholders = uniqueIds.map(() => '?').join(', ');
-        const deleteMatchedIncidentsStatement = database.prepare(`
-          DELETE FROM live_incidents
-          WHERE matched = 1 AND race_id IS NOT NULL AND id IN (${placeholders})
-        `);
-
-        database.exec('BEGIN IMMEDIATE');
-
-        try {
-          const result = deleteMatchedIncidentsStatement.run(...uniqueIds);
-          database.exec('COMMIT');
-          return Number(result.changes);
-        } catch (error) {
-          database.exec('ROLLBACK');
-          throw error;
-        }
-      }
+      persist(..._args: unknown[]): PersistLiveIncidentResult { throw new Error('Live incident persistence was removed; use normalized race export events'); },
+      list(..._args: unknown[]): PersistedLiveIncident[] { throw new Error('Live incident storage was removed; consult the verified archive'); },
+      listPendingMatch(..._args: unknown[]): PersistedLiveIncident[] { throw new Error('Live incident matching was removed'); },
+      markMatched(..._args: unknown[]): boolean { throw new Error('Heuristic incident verdict persistence was removed'); },
+      deleteMatched(..._args: unknown[]): number { throw new Error('Live incident cleanup API was removed with the live schema'); }
     }
   };
 
-  function hydrateLiveIncidents(rows: LiveIncidentRow[]): PersistedLiveIncident[] {
-    return rows.map((row) => ({
-      id: row.id,
-      incidentUid: row.incident_uid,
-      raceId: row.race_id,
-      type: row.type,
-      carId: row.car_id,
-      otherCarId: row.other_car_id,
-      impactSpeed: row.impact_speed,
-      worldPosition: { x: row.world_pos_x, y: row.world_pos_y, z: row.world_pos_z },
-      relativePosition: row.rel_pos_x === null || row.rel_pos_y === null || row.rel_pos_z === null
-        ? null
-        : { x: row.rel_pos_x, y: row.rel_pos_y, z: row.rel_pos_z },
-      createdAt: row.created_at,
-      firstReceivedAt: row.first_received_at,
-      lastReceivedAt: row.last_received_at,
-      captureStartMs: row.capture_start_ms,
-      captureEndMs: row.capture_end_ms,
-      matched: Boolean(row.matched),
-      matchedAt: row.matched_at,
-      verdictType: row.verdict_type,
-      verdictConfidence: row.verdict_confidence,
-      verdictBlamedCarId: row.verdict_blamed_car_id,
-      verdictExplanation: parseVerdictExplanation(row.verdict_explanation_json),
-      snapshots: (listLiveIncidentSnapshotsStatement.all(row.id) as LiveIncidentSnapshotRow[]).map((snapshotRow) => ({
-        id: snapshotRow.id,
-        incidentId: snapshotRow.incident_id,
-        relativeMs: snapshotRow.relative_ms,
-        carId: snapshotRow.car_id,
-        snapshotReceivedAt: snapshotRow.snapshot_received_at,
-        pos: { x: snapshotRow.pos_x, y: snapshotRow.pos_y, z: snapshotRow.pos_z },
-        velocity: { x: snapshotRow.vel_x, y: snapshotRow.vel_y, z: snapshotRow.vel_z },
-        speedKmh: snapshotRow.speed_kmh,
-        gear: snapshotRow.gear,
-        engineRpm: snapshotRow.engine_rpm,
-        normalizedSplinePos: snapshotRow.normalized_spline_pos,
-      })),
-    }));
-  }
 }
 
 type LiveIncidentRow = {

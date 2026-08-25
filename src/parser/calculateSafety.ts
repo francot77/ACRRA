@@ -1,8 +1,25 @@
 import { DriverRaceStats, SafetyCategory } from '../types/assetto';
 
+/** Stable identifier for the currently persisted safety calculation behavior. */
+export const SAFETY_FORMULA_VERSION = 'safety-v1' as const;
+
+/**
+ * safety-v1 inputs are intentionally limited to normalized race statistics.
+ * Existing ratings are not recalculated when this contract is introduced.
+ */
+export const SAFETY_V1_INPUTS = [
+  'carIncidentsGrouped',
+  'envHits',
+  'totalCuts',
+  'maxImpact',
+  'destructiveDnf',
+  'finished'
+] as const;
+
 export function calculateRaceSafety(
   stats: Pick<DriverRaceStats, 'carIncidentsGrouped' | 'envHits' | 'totalCuts' | 'maxImpact' | 'finished' | 'destructiveDnf'>
 ): number {
+  validateSafetyV1Inputs(stats);
   let score = 100;
   score -= stats.carIncidentsGrouped * 10;
   score -= stats.envHits * 6;
@@ -14,6 +31,20 @@ export function calculateRaceSafety(
   if (stats.finished) score += 5;
   if (stats.finished && stats.envHits === 0) score += 5;
   return clamp(score, 0, 100);
+}
+
+function validateSafetyV1Inputs(
+  stats: Pick<DriverRaceStats, 'carIncidentsGrouped' | 'envHits' | 'totalCuts' | 'maxImpact' | 'finished' | 'destructiveDnf'>
+): void {
+  const numericInputs = ['carIncidentsGrouped', 'envHits', 'totalCuts', 'maxImpact'] as const;
+  const incompleteInput = numericInputs.find((input) => !Number.isFinite(stats[input]));
+  if (incompleteInput) {
+    throw new Error(`Cannot calculate safety-v1: incomplete input ${incompleteInput}`);
+  }
+
+  if (typeof stats.finished !== 'boolean' || typeof stats.destructiveDnf !== 'boolean') {
+    throw new Error('Cannot calculate safety-v1: unsupported input types');
+  }
 }
 
 export function updateSafetyRating(oldSafety: number, raceScore: number, safetyMemoryFactor = 0.85): number {

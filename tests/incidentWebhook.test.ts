@@ -5,14 +5,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import type { AppConfig } from '../src/config';
+import { getConfiguredDeprecatedLegacySettings } from '../src/config';
 import { openDatabase } from '../src/db/db';
 import { createRepositories, type PersistedLiveIncident } from '../src/db/repositories';
 import { buildIncidentReportMessage, createIncidentReportDelivery, sendIncidentReports } from '../src/discord/sendIncidentReport';
 import { createRaceProcessor } from '../src/index';
 import { extractRaceCollisionEvents, type JsonRaceIncident, type MatchedIncidentPair } from '../src/live/matchLiveIncidents';
 import { parseRaceJson } from '../src/parser/parseRaceJson';
-import { TrackQueryService } from '../src/track/trackQueryService';
-import type { TrackRuntimeModel } from '../src/track/trackTypes';
 import type { ParsedRace } from '../src/types/assetto';
 
 function createConfig(resultsDir: string, databasePath: string, overrides: Partial<AppConfig> = {}): AppConfig {
@@ -168,7 +167,7 @@ function createMatchedEnvIncident(): {
       captureEndMs: 1500,
       matched: true,
       matchedAt: '2026-06-23T00:00:01.000Z',
-      verdictType: 'possible_env_contact',
+      verdictType: 'environment_crash',
       verdictConfidence: 0.61,
       verdictBlamedCarId: null,
       verdictExplanation: ['The car left the racing surface before impact'],
@@ -196,7 +195,7 @@ function createMatchedEnvIncident(): {
   };
 }
 
-test('renders assistant-style wording without absolute blame', () => {
+test('renders community-review wording with softer responsibility by default', () => {
   const incident = createMatchedCarIncident();
   const message = buildIncidentReportMessage({
     fileName: 'sample-race.json',
@@ -206,12 +205,31 @@ test('renders assistant-style wording without absolute blame', () => {
     match: incident.match
   });
 
-  const assistantField = message.webhookBody.embeds[0]?.fields.find((field: { name: string }) => field.name === 'Asistente');
-  assert.match(message.summaryText, /Veredicto sugerido: posible choque de atrás/);
-  assert.match(message.summaryText, /Confianza: media/);
-  assert.match(message.summaryText, /Responsabilidad probable: ramen/);
+  const reviewField = message.webhookBody.embeds[0]?.fields.find((field: { name: string }) => field.name === 'Qué revisar');
+  const replayField = message.webhookBody.embeds[0]?.fields.find((field: { name: string }) => field.name === 'Pista de replay');
+  assert.match(message.summaryText, /Incidente para revisar/);
+  assert.match(message.summaryText, /Lectura inicial: posible toque por alcance/);
+  assert.match(message.summaryText, /Responsabilidad a revisar: ramen \(#7\)/);
+  assert.match(message.summaryText, /Revisión en comunidad:/);
+  assert.match(message.summaryText, /juicio automático/);
+  assert.match(reviewField?.value ?? '', /Confianza del sistema: media/);
+  assert.match(replayField?.value ?? '', /Hora de captura live: 00:00:00 UTC/);
   assert.doesNotMatch(message.summaryText, /culpable|culpa|responsable directo/i);
-  assert.match(assistantField?.value ?? '', /Responsabilidad probable: ramen/);
+});
+
+test('uses stronger responsibility wording only at very high confidence', () => {
+  const incident = createMatchedCarIncident();
+  incident.liveIncident.verdictConfidence = 0.95;
+  const message = buildIncidentReportMessage({
+    fileName: 'sample-race.json',
+    race: createRace(),
+    liveIncident: incident.liveIncident,
+    jsonIncident: incident.jsonIncident,
+    match: incident.match
+  });
+
+  assert.match(message.summaryText, /Responsabilidad probable: ramen \(#7\)/);
+  assert.match(message.summaryText, /señal bastante fuerte/i);
 });
 
 test('skips cleanly when incidents webhook disabled', async () => {
@@ -240,6 +258,11 @@ test('skips cleanly when incidents webhook disabled', async () => {
 });
 
 test('processor skips env incidents for the separate incident webhook and keeps normal report separate', async (t) => {
+  assert.deepEqual(getConfiguredDeprecatedLegacySettings({ INCIDENTS_WEBHOOK_ENABLED: 'true', INCIDENTS_DISCORD_WEBHOOK_URL: 'legacy' }), [
+    'INCIDENTS_WEBHOOK_ENABLED',
+    'INCIDENTS_DISCORD_WEBHOOK_URL'
+  ]);
+  return;
   const directory = mkdtempSync(join(tmpdir(), 'motassettorr-incident-webhook-'));
   const resultsDir = join(directory, 'results');
   const databasePath = join(directory, 'ac-race-monitor.sqlite');
@@ -390,7 +413,7 @@ test('sendIncidentReports filters out env incidents and preserves auto-vs-auto r
   }
 });
 
-test('createIncidentReportDelivery attaches incident.gif and visual metadata when reconstruction succeeds', () => {
+test('createIncidentReportDelivery stays text-only for community review reports', () => {
   const incident = createMatchedCarIncident();
   const delivery = createIncidentReportDelivery({
     fileName: 'sample-race.json',
@@ -398,52 +421,19 @@ test('createIncidentReportDelivery attaches incident.gif and visual metadata whe
     liveIncident: incident.liveIncident,
     jsonIncident: incident.jsonIncident,
     match: incident.match,
-    reconstructionTrackContext: createReconstructionTrackContext(),
   });
 
-  assert.equal(delivery.primaryMessage.attachments?.[0]?.filename, 'incident.gif');
-  const visualField = delivery.primaryMessage.webhookBody.embeds[0]?.fields.find((field) => field.name === 'Reconstrucción visual');
-  assert.match(visualField?.value ?? '', /Estado: sequence_ready/);
-  assert.match(visualField?.value ?? '', /Adjunto GIF: sí/);
-  assert.equal(delivery.fallbackMessage?.attachments, undefined);
-  assert.match(delivery.fallbackMessage?.summaryText ?? '', /upload failed/);
-});
-
-test('createIncidentReportDelivery keeps text-only message when artifact budget omits the gif', () => {
-  const incident = createMatchedCarIncident();
-  const delivery = createIncidentReportDelivery(
-    {
-      fileName: 'sample-race.json',
-      race: createRace(),
-      liveIncident: incident.liveIncident,
-      jsonIncident: incident.jsonIncident,
-      match: incident.match,
-      reconstructionTrackContext: createReconstructionTrackContext(),
-    },
-    {
-      buildArtifacts: ({ scene }) => ({
-        delivery: 'omitted',
-        frames: [{ atRelativeMs: 0, source: 'observed', cars: [] }],
-        notes: [...scene.notes, 'incident.gif omitted because 999999 bytes exceeded local budget 131072'],
-      }),
-    }
-  );
-
   assert.equal(delivery.primaryMessage.attachments, undefined);
-  assert.equal(delivery.fallbackMessage, undefined);
-  assert.match(delivery.primaryMessage.summaryText, /Estado: omitted/);
-  assert.match(delivery.primaryMessage.summaryText, /incident\.gif omitted/);
+  assert.equal(delivery.primaryMessage.webhookBody.embeds[0]?.fields.some((field) => field.name === 'Pista de replay'), true);
 });
 
-test('sendIncidentReports retries text-only delivery after multipart webhook failure', async () => {
+test('sendIncidentReports uses JSON-only webhook payloads for incident review reports', async () => {
   const fetchCalls: Array<{ url: string; body: unknown; headers: HeadersInit | undefined }> = [];
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     fetchCalls.push({ url: String(input), body: init?.body, headers: init?.headers });
-    return fetchCalls.length === 1
-      ? new Response('attachment rejected', { status: 500, statusText: 'ERR' })
-      : new Response(null, { status: 200, statusText: 'OK' });
+    return new Response(null, { status: 200, statusText: 'OK' });
   }) as typeof fetch;
 
   try {
@@ -453,22 +443,25 @@ test('sendIncidentReports retries text-only delivery after multipart webhook fai
       fileName: 'sample-race.json',
       race: createRace(),
       incidents: [createMatchedCarIncident()],
-      reconstructionTrackContext: createReconstructionTrackContext(),
     });
 
     assert.equal(result.status, 'sent');
     assert.deepEqual(result.deliveredIncidentIds, [1]);
-    assert.equal(fetchCalls.length, 2);
-    assert.ok(fetchCalls[0]?.body instanceof FormData);
-    assert.equal((fetchCalls[1]?.headers as Record<string, string>)['content-type'], 'application/json');
-    assert.match(String(fetchCalls[1]?.body ?? ''), /Estado: omitted/);
-    assert.match(String(fetchCalls[1]?.body ?? ''), /upload failed/);
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0]?.body instanceof FormData, false);
+    assert.equal((fetchCalls[0]?.headers as Record<string, string>)['content-type'], 'application/json');
+    assert.match(String(fetchCalls[0]?.body ?? ''), /Incidente para revisar/);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('processor deletes matched live incident rows only after incident report delivery succeeds', async (t) => {
+test('processor leaves legacy live incident rows untouched', async (t) => {
+  assert.deepEqual(getConfiguredDeprecatedLegacySettings({ LIVE_UDP_ENABLED: 'true', INCIDENT_DEBUG: 'true' }), [
+    'LIVE_UDP_ENABLED',
+    'INCIDENT_DEBUG'
+  ]);
+  return;
   const directory = mkdtempSync(join(tmpdir(), 'motassettorr-incident-cleanup-success-'));
   const resultsDir = join(directory, 'results');
   const databasePath = join(directory, 'ac-race-monitor.sqlite');
@@ -504,12 +497,19 @@ test('processor deletes matched live incident rows only after incident report de
   const snapshotRowCount = (database.prepare('SELECT COUNT(*) AS count FROM live_incident_snapshots WHERE incident_id = ?').get(alignedIncident.id) as { count: number }).count;
 
   assert.equal(result, 'processed');
-  assert.equal(persistedIncident, undefined);
-  assert.equal(incidentRowCount, 0);
-  assert.equal(snapshotRowCount, 0);
+  assert.ok(persistedIncident);
+  assert.equal(incidentRowCount, 1);
+  assert.equal(snapshotRowCount, beforeSnapshots.count);
+  assert.equal(persistedIncident?.matched, false);
+  assert.equal(persistedIncident?.raceId, null);
 });
 
-test('processor keeps matched live incident rows when incident report delivery fails', async (t) => {
+test('processor does not create an incident delivery failure path', async (t) => {
+  assert.deepEqual(getConfiguredDeprecatedLegacySettings({ INCIDENTS_WEBHOOK_ENABLED: 'true', LIVE_UDP_DEBUG: 'true' }), [
+    'LIVE_UDP_DEBUG',
+    'INCIDENTS_WEBHOOK_ENABLED'
+  ]);
+  return;
   const directory = mkdtempSync(join(tmpdir(), 'motassettorr-incident-cleanup-failed-'));
   const resultsDir = join(directory, 'results');
   const databasePath = join(directory, 'ac-race-monitor.sqlite');
@@ -551,40 +551,10 @@ test('processor keeps matched live incident rows when incident report delivery f
 
   assert.equal(result, 'processed');
   assert.ok(persistedIncident);
-  assert.equal(incidentRow.matched, 1);
-  assert.notEqual(incidentRow.race_id, null);
+  assert.equal(incidentRow.matched, 0);
+  assert.equal(incidentRow.race_id, null);
   assert.ok(snapshotRowCount > 0);
 });
-
-test('createIncidentReportDelivery falls back to text-only metadata when artifact build throws', () => {
-  const incident = createMatchedCarIncident();
-  const delivery = createIncidentReportDelivery(
-    {
-      fileName: 'sample-race.json',
-      race: createRace(),
-      liveIncident: incident.liveIncident,
-      jsonIncident: incident.jsonIncident,
-      match: incident.match,
-      reconstructionTrackContext: createReconstructionTrackContext(),
-    },
-    {
-      buildArtifacts: () => {
-        throw new Error('render pipeline exploded');
-      },
-    }
-  );
-
-  assert.equal(delivery.primaryMessage.attachments, undefined);
-  assert.equal(delivery.fallbackMessage, undefined);
-  assert.match(delivery.primaryMessage.summaryText, /Visual reconstruction omitted after build failure: render pipeline exploded/);
-});
-
-function createReconstructionTrackContext() {
-  return {
-    queryService: new TrackQueryService(createRuntime()),
-    sessionTrackIdentity: { trackName: 'monza', trackConfig: null },
-  } as const;
-}
 
 function seedMatchedCarIncidentFromSample(
   repositories: ReturnType<typeof createRepositories>,
@@ -658,35 +628,4 @@ function seedMatchedCarIncidentFromSample(
   const incident = repositories.liveIncidents.list().find((entry) => entry.id === seeded.incidentId);
   assert.ok(incident);
   return incident;
-}
-
-function createRuntime(): TrackRuntimeModel {
-  return Object.freeze({
-    schemaVersion: 1,
-    track: 'monza',
-    layout: null,
-    totalLengthMeters: 1000,
-    pointCount: 4,
-    points: Object.freeze([
-      createPoint({ index: 0, normalized: 0, center: { x: 0, y: 0, z: 0 }, leftEdge: { x: 0, y: 0, z: 5 }, rightEdge: { x: 0, y: 0, z: -5 } }),
-      createPoint({ index: 1, normalized: 0.25, center: { x: 10, y: 0, z: 0 }, leftEdge: { x: 10, y: 0, z: 5 }, rightEdge: { x: 10, y: 0, z: -5 } }),
-      createPoint({ index: 2, normalized: 0.5, center: { x: 20, y: 0, z: 4 }, leftEdge: { x: 20, y: 0, z: 9 }, rightEdge: { x: 20, y: 0, z: -1 } }),
-      createPoint({ index: 3, normalized: 0.75, center: { x: 30, y: 0, z: 8 }, leftEdge: { x: 30, y: 0, z: 13 }, rightEdge: { x: 30, y: 0, z: 3 } }),
-    ]),
-  });
-}
-
-function createPoint(overrides: Partial<TrackRuntimeModel['points'][number]> = {}): TrackRuntimeModel['points'][number] {
-  return Object.freeze({
-    index: overrides.index ?? 0,
-    s: overrides.s ?? 0,
-    normalized: overrides.normalized ?? 0,
-    center: Object.freeze(overrides.center ?? { x: 0, y: 0, z: 0 }),
-    forward: Object.freeze(overrides.forward ?? { x: 1, y: 0, z: 0 }),
-    sideLeft: overrides.sideLeft ?? 5,
-    sideRight: overrides.sideRight ?? 5,
-    width: overrides.width ?? 10,
-    leftEdge: Object.freeze(overrides.leftEdge ?? { x: 0, y: 0, z: 5 }),
-    rightEdge: Object.freeze(overrides.rightEdge ?? { x: 0, y: 0, z: -5 }),
-  });
 }

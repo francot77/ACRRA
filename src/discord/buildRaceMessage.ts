@@ -2,6 +2,13 @@ import { getSafetyCategory } from '../parser/calculateSafety';
 import { formatConsistency, formatGap, formatLapTime } from '../parser/formatTime';
 import { DriverRaceStats, GroupedIncident, ParsedRace } from '../types/assetto';
 
+/**
+ * General race reports use only normalized ParsedRace.events and their
+ * derived grouped incidents/statistics. Live or heuristic incident records
+ * are not part of this report basis.
+ */
+export const DISCORD_EVENT_BASIS_VERSION = 'normalized-json-events-v1' as const;
+
 type DiscordEmbedField = {
   name: string;
   value: string;
