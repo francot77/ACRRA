@@ -13,12 +13,7 @@ export type DatabaseBackup = {
 
 export function openDatabase(databasePath: string, options: { archiveDirectory?: string } = {}): AppDatabase {
   mkdirSync(dirname(databasePath), { recursive: true });
-  const hadDatabase = existsSync(databasePath);
   const database = new DatabaseSync(databasePath);
-
-  if (hadDatabase) {
-    backupDatabase(databasePath);
-  }
 
   database.exec(readFileSync(resolve(process.cwd(), 'src/db/schema.sql'), 'utf8'));
   applyMigrations(database, undefined, { databasePath, archiveDirectory: options.archiveDirectory });

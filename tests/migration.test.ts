@@ -56,6 +56,18 @@ test('empty fresh databases converge without creating legacy incident tables', (
   database.close();
 });
 
+test('normal database open does not create a full backup', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'acrra-startup-'));
+  const path = join(directory, 'startup.sqlite');
+  const first = openDatabase(path);
+  first.close();
+
+  const restarted = openDatabase(path);
+  restarted.close();
+
+  assert.deepEqual(readdirSync(directory).filter((entry) => entry.includes('.backup-')), []);
+});
+
 test('migration rerun is idempotent and does not create another archive', () => {
   const path = legacyDatabasePath();
   const archiveDirectory = mkdtempSync(join(tmpdir(), 'acrra-archive-'));

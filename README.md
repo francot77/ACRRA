@@ -149,8 +149,9 @@ required session fields remain rejected.
 
 Fresh databases use schema version 2 and contain only `schema_migrations`,
 `processed_files`, `drivers`, `races`, and `race_driver_results`. Existing
-databases are backed up before migration (including SQLite `-wal`/`-shm`
-sidecars), integrity-checked, then migrated transactionally. Migration 1 adds
+databases are migrated transactionally without creating a full-file backup on
+normal startup. Use the explicit `backupDatabase` utility or the normal
+deployment backup process when a recoverable SQLite copy is required. Migration 1 adds
 legacy verdict columns when needed; migration 2 writes and verifies the
 `acrra-incident-archive-v1` export before dropping legacy incident tables and
 indexes. A failed archive or verification rolls back before deletion, and a
