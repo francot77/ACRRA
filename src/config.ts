@@ -11,7 +11,7 @@ const envSchema = z.object({
   WATCH_GLOB: z.string().default('*RACE*.json'),
   SCORING_ENABLED: z.enum(['true', 'false']).default('false'),
   SCORING_SOURCE_GLOB: z.string().min(1).default('*_RACE.json'),
-  SCORING_SCHEDULE: z.string().refine((value) => value === '0 21 * * *', 'SCORING_SCHEDULE must be 0 21 * * *').default('0 21 * * *'),
+  SCORING_SCHEDULE: z.enum(['0 21 * * *', '0 12 * * *']).default('0 21 * * *'),
   SCORING_TIMEZONE: z.string().refine((value) => value === 'America/Argentina/Buenos_Aires', 'SCORING_TIMEZONE must be America/Argentina/Buenos_Aires').default('America/Argentina/Buenos_Aires'),
   SCORING_RACE_WINDOW_MINUTES: z.coerce.number().int().positive().default(60),
   SCORING_DST_POLICY: z.enum(['reject-ambiguous']).default('reject-ambiguous'),
@@ -19,6 +19,7 @@ const envSchema = z.object({
   DEFAULT_SAFETY_RATING: z.coerce.number().min(0).max(100).default(75),
   SAFETY_MEMORY_FACTOR: z.coerce.number().min(0).max(1).default(0.85),
   MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN: z.coerce.number().int().positive().default(3),
+  SAFETY_MIN_IMPACT_KMH: z.coerce.number().nonnegative().default(30),
   NUCLEAR_MISSILE_MIN_CAR_IMPACT_KMH: z.coerce.number().nonnegative().default(100),
   NODE_ENV: z.string().default('production')
 });
@@ -34,7 +35,7 @@ export type AppConfig = {
   watchGlob: string;
   scoringEnabled: boolean;
   scoringSourceGlob: string;
-  scoringSchedule: '0 21 * * *';
+  scoringSchedule: '0 21 * * *' | '0 12 * * *';
   scoringTimezone: 'America/Argentina/Buenos_Aires';
   scoringRaceWindowMinutes: number;
   scoringDstPolicy: 'reject-ambiguous';
@@ -42,6 +43,7 @@ export type AppConfig = {
   defaultSafetyRating: number;
   safetyMemoryFactor: number;
   minActiveDriversForSafetyGain: number;
+  safetyMinImpactKmh: number;
   nuclearMissileMinCarImpactKmh: number;
   nodeEnv: string;
 };
@@ -68,6 +70,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     defaultSafetyRating: parsed.DEFAULT_SAFETY_RATING,
     safetyMemoryFactor: parsed.SAFETY_MEMORY_FACTOR,
     minActiveDriversForSafetyGain: parsed.MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN,
+    safetyMinImpactKmh: parsed.SAFETY_MIN_IMPACT_KMH,
     nuclearMissileMinCarImpactKmh: parsed.NUCLEAR_MISSILE_MIN_CAR_IMPACT_KMH,
     nodeEnv: parsed.NODE_ENV
   };

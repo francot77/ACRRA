@@ -73,6 +73,32 @@ test('groupIncidents dedupes mirrored contact and splits separate incidents', ()
   assert.equal(grouped[1]?.rawEventCount, 1);
 });
 
+test('safety scoring ignores low-impact noise while retaining raw event counts', () => {
+  const race = createSyntheticRace();
+  race.events = [
+    createCarEvent({ index: 0, carId: 2, otherCarId: 3, impactSpeed: 12 }),
+    createCarEvent({ index: 1, carId: 3, otherCarId: 2, impactSpeed: 10 }),
+    { index: 2, type: 'COLLISION_WITH_ENV', carId: 2, driverIdentity: { kind: 'guid', value: 'dnf-guid' }, driverName: 'DNF Driver', impactSpeed: 15 }
+  ];
+
+  const grouped = groupIncidents(race.events.filter((event): event is ParsedCarCollisionEvent => event.type === 'COLLISION_WITH_CAR'));
+  const stats = calculateDriverStats(race, grouped, 75, 30).find((entry) => entry.guid === 'dnf-guid');
+
+  assert.ok(stats);
+  assert.equal(stats.rawCarCollisionEvents, 2);
+  assert.equal(stats.rawEnvHits, 1);
+  assert.equal(stats.rawCollisionEvents, 3);
+  assert.equal(stats.carIncidentsGrouped, 0);
+  assert.equal(stats.envHits, 0);
+  assert.equal(stats.maxImpact, 0);
+});
+
+test('destructive DNF is diagnostic and cannot affect a safety score', () => {
+  const base = { carIncidentsGrouped: 0, envHits: 0, totalCuts: 0, maxImpact: 0, finished: false };
+  assert.equal(calculateRaceSafety(base), 100);
+  assert.equal(calculateRaceSafety({ ...base, destructiveDnf: true } as never), 100);
+});
+
 test('safety formula, rolling rating, and categories follow the frozen contract', async (t) => {
   const score = calculateRaceSafety({
     carIncidentsGrouped: 2,
@@ -103,7 +129,58 @@ test('safety formula, rolling rating, and categories follow the frozen contract'
   }
 });
 
-test('inactive drivers do not receive awards or safety updates, while destructive DNF stays active and penalized', () => {
+test('one-lap non-finishers without incidents preserve their historical safety rating', () => {
+  const [rated] = applySafetyRatings([
+    createBaseStat({ guid: 'dnf-clean-guid', completedLaps: 1, raceLaps: 3, finished: false, oldSafetyRating: 75 })
+  ], { 'dnf-clean-guid': 75 });
+
+  assert.ok(rated);
+  assert.equal(rated.raceScore, 100);
+  assert.equal(rated.newSafetyRating, 75);
+});
+
+test('non-finishers with only diagnostic destructive DNF preserve their historical safety rating', () => {
+  const [rated] = applySafetyRatings([
+    createBaseStat({ guid: 'diagnostic-dnf-guid', finished: false, destructiveDnf: true, oldSafetyRating: 82 })
+  ], { 'diagnostic-dnf-guid': 82 });
+
+  assert.ok(rated);
+  assert.equal(rated.raceScore, 100);
+  assert.equal(rated.newSafetyRating, 82);
+});
+
+test('non-finishers with incidents can only decrease their historical safety rating', () => {
+  const [rated] = applySafetyRatings([
+    createBaseStat({
+      guid: 'dnf-incident-guid',
+      completedLaps: 1,
+      raceLaps: 3,
+      finished: false,
+      carIncidentsGrouped: 2,
+      envHits: 1,
+      totalCuts: 3,
+      maxImpact: 130,
+      oldSafetyRating: 75
+    })
+  ], { 'dnf-incident-guid': 75 });
+
+  assert.ok(rated);
+  assert.equal(rated.raceScore, 38);
+  assert.equal(rated.newSafetyRating, 69.45);
+  assert.ok(rated.newSafetyRating <= rated.oldSafetyRating);
+});
+
+test('finishers retain the clean-race safety bonus', () => {
+  const [rated] = applySafetyRatings([
+    createBaseStat({ guid: 'finisher-guid', finished: true, oldSafetyRating: 75 })
+  ], { 'finisher-guid': 75 });
+
+  assert.ok(rated);
+  assert.equal(rated.raceScore, 100);
+  assert.equal(rated.newSafetyRating, 78.75);
+});
+
+test('inactive drivers do not receive awards or safety updates, while destructive DNF remains diagnostic only', () => {
   const race = createSyntheticRace();
   const groupedIncidents = groupIncidents(race.events.filter((event): event is ParsedCarCollisionEvent => event.type === 'COLLISION_WITH_CAR'));
   const stats = calculateDriverStats(race, groupedIncidents, 75);
@@ -126,8 +203,8 @@ test('inactive drivers do not receive awards or safety updates, while destructiv
   assert.equal(destructiveDnf.inactive, false);
   assert.equal(destructiveDnf.destructiveDnf, true);
   assert.equal(destructiveDnf.finished, false);
-  assert.equal(destructiveDnf.raceScore, 59);
-  assert.equal(destructiveDnf.newSafetyRating, 76.85);
+  assert.equal(destructiveDnf.raceScore, 74);
+  assert.equal(destructiveDnf.newSafetyRating, 79.1);
   assert.equal(destructiveDnf.safetyChangeReason, 'updated');
 });
 
@@ -238,7 +315,7 @@ test('dnf with hits does not lose safety when the race is not safety-eligible', 
   const dnf = ratedStats.find((entry) => entry.guid === 'dnf-guid');
 
   assert.ok(dnf);
-  assert.equal(dnf.raceScore, 27);
+  assert.equal(dnf.raceScore, 42);
   assert.equal(dnf.newSafetyRating, 84);
   assert.equal(dnf.safetyChangeReason, 'not-eligible');
 });
@@ -277,6 +354,8 @@ function createBaseStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceSta
     maxCarImpact: overrides.maxCarImpact ?? 0,
     maxEnvImpact: overrides.maxEnvImpact ?? 0,
     maxImpact: overrides.maxImpact ?? 0,
+    rawCarCollisionEvents: overrides.rawCarCollisionEvents ?? 0,
+    rawEnvHits: overrides.rawEnvHits ?? 0,
     rawCollisionEvents: overrides.rawCollisionEvents ?? 0,
     'tyre usado más frecuente': overrides['tyre usado más frecuente'] ?? 'Soft',
     totalTime: overrides.totalTime ?? 300000,

@@ -3,7 +3,8 @@ import { NO_TIME_SENTINEL, DriverRaceStats, GroupedIncident, ParsedRace } from '
 export function calculateDriverStats(
   race: ParsedRace,
   groupedIncidents: GroupedIncident[],
-  defaultSafetyRating = 75
+  defaultSafetyRating = 75,
+  safetyMinImpactKmh = 30
 ): DriverRaceStats[] {
   return race.drivers.map((driver) => {
     const laps = race.lapsByCarId.get(driver.carId) ?? [];
@@ -17,7 +18,11 @@ export function calculateDriverStats(
     const rawCollisionEvents = race.events.filter(
       (event) => event.carId === driver.carId || (event.type === 'COLLISION_WITH_CAR' && event.otherCarId === driver.carId)
     );
-    const driverIncidents = groupedIncidents.filter((incident) => incident.carIdsInvolved.includes(driver.carId));
+    const driverIncidents = groupedIncidents.filter(
+      (incident) => incident.carIdsInvolved.includes(driver.carId) && incident.maxImpact >= safetyMinImpactKmh
+    );
+    const safetyEnvEvents = envEvents.filter((event) => event.impactSpeed >= safetyMinImpactKmh);
+    const safetyCarCollisionEvents = carCollisionEvents.filter((event) => event.impactSpeed >= safetyMinImpactKmh);
     const hasValidResult = driver.bestLap != null && driver.bestLap < NO_TIME_SENTINEL && driver.totalTime > 0;
     const active = laps.length > 0 || rawCollisionEvents.length > 0 || hasValidResult;
     const inactive = laps.length === 0 && rawCollisionEvents.length === 0 && !hasValidResult;
@@ -43,10 +48,12 @@ export function calculateDriverStats(
       consistency: calculateConsistency(validLapTimes),
       totalCuts: sum(laps.map((lap) => lap.cuts)),
       carIncidentsGrouped: driverIncidents.length,
-      envHits: envEvents.length,
+      envHits: safetyEnvEvents.length,
       maxCarImpact: maxOrZero(carCollisionEvents.map((event) => event.impactSpeed)),
       maxEnvImpact: maxOrZero(envEvents.map((event) => event.impactSpeed)),
-      maxImpact: maxOrZero(rawCollisionEvents.map((event) => event.impactSpeed)),
+      maxImpact: maxOrZero([...safetyCarCollisionEvents, ...safetyEnvEvents].map((event) => event.impactSpeed)),
+      rawCarCollisionEvents: carCollisionEvents.length,
+      rawEnvHits: envEvents.length,
       rawCollisionEvents: rawCollisionEvents.length,
       'tyre usado más frecuente': mostFrequentTyre(laps.map((lap) => lap.tyre)),
       totalTime: driver.totalTime,

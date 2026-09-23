@@ -169,6 +169,8 @@ export interface DriverStats {
   maxCarImpact: number;
   maxEnvImpact: number;
   maxImpact: number;
+  rawCarCollisionEvents: number;
+  rawEnvHits: number;
   rawCollisionEvents: number;
   'tyre usado más frecuente': string | null;
   totalTime: number;

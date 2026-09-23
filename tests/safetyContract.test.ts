@@ -5,7 +5,7 @@ import {
   applySafetyRatings,
   calculateRaceSafety,
   SAFETY_FORMULA_VERSION,
-  SAFETY_V1_INPUTS,
+  SAFETY_V2_INPUTS,
   updateSafetyRating
 } from '../src/parser/calculateSafety';
 import { calculateDriverStats } from '../src/parser/calculateDriverStats';
@@ -13,14 +13,13 @@ import { groupIncidents } from '../src/parser/groupIncidents';
 import { parseRaceJson } from '../src/parser/parseRaceJson';
 import { DriverRaceStats, ParsedRace } from '../src/types/assetto';
 
-test('safety-v1 exports the frozen formula identity and inputs', () => {
-  assert.equal(SAFETY_FORMULA_VERSION, 'safety-v1');
-  assert.deepEqual(SAFETY_V1_INPUTS, [
+test('safety-v2 exports the frozen formula identity and inputs', () => {
+  assert.equal(SAFETY_FORMULA_VERSION, 'safety-v2');
+  assert.deepEqual(SAFETY_V2_INPUTS, [
     'carIncidentsGrouped',
     'envHits',
     'totalCuts',
     'maxImpact',
-    'destructiveDnf',
     'finished'
   ]);
 
@@ -30,15 +29,14 @@ test('safety-v1 exports the frozen formula identity and inputs', () => {
       envHits: 1,
       totalCuts: 3,
       maxImpact: 130,
-      destructiveDnf: false,
-      finished: true
+       finished: true
     }),
     43
   );
   assert.equal(updateSafetyRating(75.6, 27), 68.31);
 });
 
-test('safety-v1 preserves historical ratings and eligibility behavior', () => {
+test('safety-v2 preserves historical ratings and eligibility behavior', () => {
   const stats = [createStat({ guid: 'driver-1', oldSafetyRating: 91, newSafetyRating: 91 })];
   const result = applySafetyRatings(stats, { 'driver-1': 91 }, { minActiveDriversForSafety: 2 });
 
@@ -48,15 +46,14 @@ test('safety-v1 preserves historical ratings and eligibility behavior', () => {
   assert.equal(result[0]?.safetyChangeReason, 'not-eligible');
 });
 
-test('safety-v1 rejects incomplete or unsupported inputs instead of silently changing the score', () => {
+test('safety-v2 rejects incomplete or unsupported inputs instead of silently changing the score', () => {
   assert.throws(
     () => calculateRaceSafety({
       carIncidentsGrouped: 0,
       envHits: 0,
       totalCuts: 0,
       maxImpact: undefined as never,
-      destructiveDnf: false,
-      finished: true
+       finished: true
     }),
     /incomplete input maxImpact/
   );
@@ -67,8 +64,7 @@ test('safety-v1 rejects incomplete or unsupported inputs instead of silently cha
       envHits: 0,
       totalCuts: 0,
       maxImpact: 0,
-      destructiveDnf: false,
-      finished: 'yes' as never
+       finished: 'yes' as never
     }),
     /unsupported input types/
   );
@@ -120,7 +116,7 @@ function createStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
     completedLaps: 2, raceLaps: 2, hasValidResult: true, active: true, inactive: false, finished: true,
     destructiveDnf: false, bestLap: 90000, avgLap: 90000, idealLap: 90000, consistency: 0,
     totalCuts: 0, carIncidentsGrouped: 0, envHits: 0, maxCarImpact: 0, maxEnvImpact: 0, maxImpact: 0,
-    rawCollisionEvents: 0, 'tyre usado más frecuente': 'Soft', totalTime: 180000, raceScore: 0,
+    rawCarCollisionEvents: 0, rawEnvHits: 0, rawCollisionEvents: 0, 'tyre usado más frecuente': 'Soft', totalTime: 180000, raceScore: 0,
     oldSafetyRating: 75, newSafetyRating: 75, safetyChangeReason: 'updated', ...overrides
   };
 }

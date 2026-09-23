@@ -9,12 +9,18 @@ import { loadConfig } from '../../src/config';
 const race = JSON.stringify({ Type: 'RACE', TrackName: 'test', TrackConfig: '', DurationSecs: 0, RaceLaps: 3, Cars: [], Result: [], Laps: [], Events: [] });
 
 const now = new Date('2026-06-21T01:00:00.000Z');
-const config = (resultsDir: string) => ({ resultsDir, sourceGlob: '*_RACE.json', minFileAgeMs: 1000, stabilityDelayMs: 1 });
+const config = (resultsDir: string, schedule?: '0 21 * * *' | '0 12 * * *') => ({
+  resultsDir,
+  sourceGlob: '*_RACE.json',
+  minFileAgeMs: 1000,
+  stabilityDelayMs: 1,
+  ...(schedule ? { schedule } : {})
+});
 
-async function stableFile(dir: string, fileName: string): Promise<void> {
+async function stableFile(dir: string, fileName: string, referenceNow = now): Promise<void> {
   const path = join(dir, fileName);
   await writeFile(path, race);
-  const old = new Date(now.getTime() - 10_000);
+  const old = new Date(referenceNow.getTime() - 10_000);
   await utimes(path, old, old);
 }
 
@@ -48,6 +54,19 @@ test('source adapter accepts the 21:00 and 21:59 races but excludes exactly 22:0
   assert.equal(await findFirstEligibleRace({ ...config(lateDir), raceWindowMinutes: 1 }, now, '2026-06-20'), null);
 });
 
+test('source adapter accepts the configured 12:00 window and excludes 13:00', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'acrra-source-noon-window-'));
+  const noonNow = new Date('2026-06-20T16:00:00.000Z');
+  await stableFile(dir, '2026_6_20_12_59_RACE.json', noonNow);
+  await stableFile(dir, '2026_6_20_13_0_RACE.json', noonNow);
+  const source = await findFirstEligibleRace(config(dir, '0 12 * * *'), noonNow, '2026-06-20');
+  assert.equal(source?.fileName, '2026_6_20_12_59_RACE.json');
+
+  const lateDir = await mkdtemp(join(tmpdir(), 'acrra-source-noon-window-late-'));
+  await stableFile(lateDir, '2026_6_20_13_0_RACE.json', noonNow);
+  assert.equal(await findFirstEligibleRace(config(lateDir, '0 12 * * *'), noonNow, '2026-06-20'), null);
+});
+
 test('source adapter rejects invalid suffixes, malformed JSON, and non-RACE JSON', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'acrra-source-invalid-'));
   await stableFile(dir, '2026_6_20_21_0_QUALIFY.json');
@@ -79,5 +98,11 @@ test('source adapter rejects a file that changes during the stability window', a
 
 test('scoring race window setting defaults to 60 minutes and rejects non-positive values', () => {
   assert.equal(loadConfig({}).scoringRaceWindowMinutes, 60);
+  assert.equal(loadConfig({}).scoringSchedule, '0 21 * * *');
+  assert.equal(loadConfig({ SCORING_SCHEDULE: '0 12 * * *' }).scoringSchedule, '0 12 * * *');
+  assert.throws(() => loadConfig({ SCORING_SCHEDULE: '0 13 * * *' }), /SCORING_SCHEDULE/);
+  assert.equal(loadConfig({}).safetyMinImpactKmh, 30);
+  assert.equal(loadConfig({ SAFETY_MIN_IMPACT_KMH: '45' }).safetyMinImpactKmh, 45);
+  assert.throws(() => loadConfig({ SAFETY_MIN_IMPACT_KMH: '-1' }));
   assert.throws(() => loadConfig({ SCORING_RACE_WINDOW_MINUTES: '0' }), /greater than 0/);
 });

@@ -42,6 +42,8 @@ function createStat(overrides: Partial<DriverRaceStats> = {}): DriverRaceStats {
     maxCarImpact: overrides.maxCarImpact ?? 0,
     maxEnvImpact: overrides.maxEnvImpact ?? 0,
     maxImpact: overrides.maxImpact ?? 0,
+    rawCarCollisionEvents: overrides.rawCarCollisionEvents ?? 0,
+    rawEnvHits: overrides.rawEnvHits ?? 0,
     rawCollisionEvents: overrides.rawCollisionEvents ?? 0,
     'tyre usado más frecuente': overrides['tyre usado más frecuente'] ?? 'Soft',
     totalTime: overrides.totalTime ?? 300000,

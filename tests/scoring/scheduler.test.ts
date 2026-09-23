@@ -15,6 +15,26 @@ test('slot identity uses Buenos Aires local date at 21:00', () => {
   assert.equal(localDateKey(new Date('2026-08-20T00:00:00Z')), '2026-08-19');
 });
 
+test('scheduler uses the configured 12:00 schedule and defaults to 21:00', () => {
+  const createScheduler = (schedule?: string) => new DailyRaceScheduler({
+    schedule,
+    source: { resultsDir: '', sourceGlob: '*_RACE.json', minFileAgeMs: 0 },
+    store: new MemorySlots(),
+    onClaim: async () => {}
+  });
+  const nextHour = (scheduler: DailyRaceScheduler): string => {
+    scheduler.start();
+    const task = (scheduler as unknown as { task: { getNextRun(): Date | null } }).task;
+    const nextRun = task.getNextRun();
+    scheduler.stop();
+    assert.ok(nextRun);
+    return new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', hour12: false }).format(nextRun);
+  };
+
+  assert.equal(nextHour(createScheduler('0 12 * * *')), '12');
+  assert.equal(nextHour(createScheduler()), '21');
+});
+
 test('pending slot retries late files and claims only once across restart', async () => {
   const store = new MemorySlots();
   let available: ValidatedRaceSource | null = null;

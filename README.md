@@ -57,9 +57,11 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 | `SCAN_ON_START` | `true` | Reprocesa la carpeta al arrancar con las mismas reglas de estabilidad. |
 | `MIN_FILE_AGE_MS` | `3000` | Espera mínima antes de parsear. |
 | `WATCH_GLOB` | `*RACE*.json` | Filtro de archivos observados. |
+| `SCORING_SCHEDULE` | `0 21 * * *` | Daily scoring time in Buenos Aires. For the temporary first-race test only, set `SCORING_SCHEDULE=0 12 * * *` in `.env`; keep the production default at `21:00`. |
 | `DEFAULT_SAFETY_RATING` | `75` | Safety inicial para GUIDs nuevos. |
 | `SAFETY_MEMORY_FACTOR` | `0.85` | Memoria histórica de safety. |
 | `MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN` | `3` | Mínimo de pilotos activos para que la carrera puntúe safety. |
+| `SAFETY_MIN_IMPACT_KMH` | `30` | Minimum impact for a normalized car contact or environment event to affect safety. The default is conservative because the repository does not contain enough telemetry to calibrate a more precise value. |
 | `NUCLEAR_MISSILE_MIN_CAR_IMPACT_KMH` | `100` | Umbral mínimo de impacto auto vs auto para `💥 Misil nuclear`. |
 | `NODE_ENV` | `production` | Modo runtime. |
 | `HOST_ASSETTO_RESULTS_DIR` | `/opt/assetto/server/results` | Host path para Compose. |
@@ -132,14 +134,16 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 - Envía exactamente un resumen por carrera persistida.
 - Evita doble persistencia y doble notificación cuando el archivo ya existe en `processed_files`.
 
-## Safety-v1 and Discord Event Basis
+## Safety-v2 and Discord Event Basis
 
-The current safety behavior is frozen as `safety-v1`. It calculates
-`clamp(100 - 10*groupedCarContacts - 6*environmentHits - 2*cuts - impactThresholds - 15*destructiveDnf + 5*finished + 5*finishedWithoutEnvironmentHit, 0, 100)`, with impact deductions of 10, 20, and 35 above 60, 120, and 200 km/h. Historical ratings continue to use the existing `0.85` memory factor and are not recomputed.
+The current safety behavior is frozen as `safety-v2`. It calculates
+`clamp(100 - 10*groupedCarContacts - 6*environmentHits - 2*cuts - impactThresholds + 5*finished + 5*finishedWithoutEnvironmentHit, 0, 100)`, with impact deductions of 10, 20, and 35 above 60, 120, and 200 km/h. `destructiveDnf` remains diagnostic for compatibility, but is not safety evidence. Historical ratings continue to use the existing `0.85` memory factor and are not recomputed.
+
+Safety scoring uses normalized signals: mirrored/nearby car events are grouped, and car/environment events below `SAFETY_MIN_IMPACT_KMH` are excluded from scoring. Raw event counts remain available separately for diagnostics. The default of 30 km/h is intentionally conservative and not a claim about blame, damage, consequence, or relative velocity; it should be recalibrated only with representative server data.
 
 The general Discord race report uses basis `normalized-json-events-v1`: its incident counts, grouped car contacts, environment hits, and awards come from the parser's normalized `ParsedRace.events` for active result cars. Live or heuristic incident records are not report inputs.
 
-Safety derivation requires every declared `safety-v1` input. Missing, non-finite,
+Safety derivation requires every declared `safety-v2` input. Missing, non-finite,
 or unsupported input types fail visibly with an error; they never become a
 silent zero or an implicitly changed score. Missing JSON `Events` is the one
 documented normalization: it becomes an empty event list, while malformed

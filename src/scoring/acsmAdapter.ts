@@ -5,6 +5,8 @@ import { parseRaceJson } from '../parser/parseRaceJson';
 import type { ParsedRace } from '../types/assetto';
 
 export const DEFAULT_SCORING_TIMEZONE = 'America/Argentina/Buenos_Aires' as const;
+export const DEFAULT_SCORING_SCHEDULE = '0 21 * * *' as const;
+export type ScoringSchedule = '0 21 * * *' | '0 12 * * *';
 
 export type ParsedRaceFilenameTimestamp = {
   year: number;
@@ -22,6 +24,7 @@ export type RaceSourceConfig = {
   minFileAgeMs: number;
   stabilityDelayMs?: number;
   raceWindowMinutes?: number;
+  schedule?: ScoringSchedule;
 };
 
 export type ValidatedRaceSource = {
@@ -41,7 +44,7 @@ export async function findFirstEligibleRace(
   if (!Number.isInteger(raceWindowMinutes) || raceWindowMinutes <= 0) {
     throw new Error('raceWindowMinutes must be a positive integer');
   }
-  const window = getScoringWindowBounds(slotDate, timezone, raceWindowMinutes);
+  const window = getScoringWindowBounds(slotDate, timezone, raceWindowMinutes, config.schedule);
   if (!window) return null;
   const entries = await readdir(config.resultsDir, { withFileTypes: true }).catch(() => []);
   const names = entries
@@ -60,11 +63,18 @@ export async function findFirstEligibleRace(
   return null;
 }
 
-export function getScoringWindowBounds(slotDate: string, timezone: string = DEFAULT_SCORING_TIMEZONE, windowMinutes = 60): { start: Date; end: Date } | null {
+export function getScoringWindowBounds(
+  slotDate: string,
+  timezone: string = DEFAULT_SCORING_TIMEZONE,
+  windowMinutes = 60,
+  schedule: ScoringSchedule = DEFAULT_SCORING_SCHEDULE
+): { start: Date; end: Date } | null {
   if (!Number.isInteger(windowMinutes) || windowMinutes <= 0) throw new Error('windowMinutes must be a positive integer');
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(slotDate);
   if (!match) return null;
-  const start = localDateTimeToInstant({ year: Number(match[1]), month: Number(match[2]), day: Number(match[3]), hour: 21, minute: 0 }, timezone);
+  const hour = schedule === '0 12 * * *' ? 12 : schedule === DEFAULT_SCORING_SCHEDULE ? 21 : null;
+  if (hour === null) throw new Error('schedule must be an allowlisted scoring schedule');
+  const start = localDateTimeToInstant({ year: Number(match[1]), month: Number(match[2]), day: Number(match[3]), hour, minute: 0 }, timezone);
   return start ? { start, end: new Date(start.getTime() + windowMinutes * 60_000) } : null;
 }
 

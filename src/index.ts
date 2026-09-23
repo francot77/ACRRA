@@ -60,7 +60,7 @@ export function createRaceProcessor(
     const groupedIncidents = groupIncidents(
       race.events.filter((event): event is ParsedCarCollisionEvent => event.type === 'COLLISION_WITH_CAR')
     );
-    const driverStats = calculateDriverStats(race, groupedIncidents, config.defaultSafetyRating);
+    const driverStats = calculateDriverStats(race, groupedIncidents, config.defaultSafetyRating, config.safetyMinImpactKmh);
     const historicalRatings = repositories.drivers.getSafetyRatings(
       driverStats.flatMap((entry) => (entry.guid ? [entry.guid] : []))
     );
@@ -152,10 +152,12 @@ export async function bootstrapApplication(
           resultsDir: config.resultsDir,
           sourceGlob: config.scoringSourceGlob,
            minFileAgeMs: config.minFileAgeMs,
-           raceWindowMinutes: config.scoringRaceWindowMinutes
-        },
-        store: new SqliteRunSlotStore(database),
-        timezone: config.scoringTimezone,
+           raceWindowMinutes: config.scoringRaceWindowMinutes,
+           schedule: config.scoringSchedule
+         },
+         store: new SqliteRunSlotStore(database),
+         schedule: config.scoringSchedule,
+         timezone: config.scoringTimezone,
         dstPolicy: config.scoringDstPolicy,
         onClaim: async (slotKey, source) => {
           await new ScoringRunService(new ScoringStore(database), config.scoringResultsWebhookUrl ?? '').process(slotKey, source);

@@ -1,25 +1,27 @@
 import { DriverRaceStats, SafetyCategory } from '../types/assetto';
 
 /** Stable identifier for the currently persisted safety calculation behavior. */
-export const SAFETY_FORMULA_VERSION = 'safety-v1' as const;
+export const SAFETY_FORMULA_VERSION = 'safety-v2' as const;
 
 /**
- * safety-v1 inputs are intentionally limited to normalized race statistics.
+ * safety-v2 inputs are intentionally limited to normalized race statistics.
  * Existing ratings are not recalculated when this contract is introduced.
  */
-export const SAFETY_V1_INPUTS = [
+export const SAFETY_V2_INPUTS = [
   'carIncidentsGrouped',
   'envHits',
   'totalCuts',
   'maxImpact',
-  'destructiveDnf',
   'finished'
 ] as const;
 
+/** @deprecated Use SAFETY_V2_INPUTS. Kept as an export alias for compatibility. */
+export const SAFETY_V1_INPUTS = SAFETY_V2_INPUTS;
+
 export function calculateRaceSafety(
-  stats: Pick<DriverRaceStats, 'carIncidentsGrouped' | 'envHits' | 'totalCuts' | 'maxImpact' | 'finished' | 'destructiveDnf'>
+  stats: Pick<DriverRaceStats, 'carIncidentsGrouped' | 'envHits' | 'totalCuts' | 'maxImpact' | 'finished'>
 ): number {
-  validateSafetyV1Inputs(stats);
+  validateSafetyV2Inputs(stats);
   let score = 100;
   score -= stats.carIncidentsGrouped * 10;
   score -= stats.envHits * 6;
@@ -27,23 +29,22 @@ export function calculateRaceSafety(
   if (stats.maxImpact > 60) score -= 10;
   if (stats.maxImpact > 120) score -= 20;
   if (stats.maxImpact > 200) score -= 35;
-  if (stats.destructiveDnf) score -= 15;
   if (stats.finished) score += 5;
   if (stats.finished && stats.envHits === 0) score += 5;
   return clamp(score, 0, 100);
 }
 
-function validateSafetyV1Inputs(
-  stats: Pick<DriverRaceStats, 'carIncidentsGrouped' | 'envHits' | 'totalCuts' | 'maxImpact' | 'finished' | 'destructiveDnf'>
+function validateSafetyV2Inputs(
+  stats: Pick<DriverRaceStats, 'carIncidentsGrouped' | 'envHits' | 'totalCuts' | 'maxImpact' | 'finished'>
 ): void {
   const numericInputs = ['carIncidentsGrouped', 'envHits', 'totalCuts', 'maxImpact'] as const;
   const incompleteInput = numericInputs.find((input) => !Number.isFinite(stats[input]));
   if (incompleteInput) {
-    throw new Error(`Cannot calculate safety-v1: incomplete input ${incompleteInput}`);
+    throw new Error(`Cannot calculate safety-v2: incomplete input ${incompleteInput}`);
   }
 
-  if (typeof stats.finished !== 'boolean' || typeof stats.destructiveDnf !== 'boolean') {
-    throw new Error('Cannot calculate safety-v1: unsupported input types');
+  if (typeof stats.finished !== 'boolean') {
+    throw new Error('Cannot calculate safety-v2: unsupported input types');
   }
 }
 
@@ -103,7 +104,11 @@ export function applySafetyRatings(
       };
     }
 
-    const newSafetyRating = updateSafetyRating(oldSafetyRating, raceScore, safetyMemoryFactor);
+    const newSafetyRating = !entry.finished && !hasMeaningfulIncident(entry)
+      ? oldSafetyRating
+      : !entry.finished
+        ? Math.min(oldSafetyRating, updateSafetyRating(oldSafetyRating, raceScore, safetyMemoryFactor))
+        : updateSafetyRating(oldSafetyRating, raceScore, safetyMemoryFactor);
 
     return {
       ...entry,
@@ -113,6 +118,12 @@ export function applySafetyRatings(
       safetyChangeReason: 'updated'
     };
   });
+}
+
+function hasMeaningfulIncident(
+  stats: Pick<DriverRaceStats, 'carIncidentsGrouped' | 'envHits' | 'totalCuts' | 'maxImpact'>
+): boolean {
+  return stats.carIncidentsGrouped > 0 || stats.envHits > 0 || stats.totalCuts > 0 || stats.maxImpact > 0;
 }
 
 function clamp(value: number, min: number, max: number): number {

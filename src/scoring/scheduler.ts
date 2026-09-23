@@ -56,6 +56,7 @@ export type SchedulerOptions = {
   source: RaceSourceConfig;
   store: RunSlotStore;
   onClaim: (slotKey: string, source: ValidatedRaceSource) => Promise<void>;
+  schedule?: string;
   now?: () => Date;
   timezone?: string;
   dstPolicy?: 'reject-ambiguous';
@@ -80,7 +81,7 @@ export class DailyRaceScheduler {
     const current = this.options.store.get(slotKey);
     if (current?.status === 'claimed' || current?.status === 'expired') return 'duplicate';
 
-    const window = getScoringWindowBounds(slotKey, timezone, this.options.source.raceWindowMinutes ?? 60);
+    const window = getScoringWindowBounds(slotKey, timezone, this.options.source.raceWindowMinutes ?? 60, this.options.source.schedule);
     if (window && at >= window.end) {
       this.options.store.expire(slotKey);
       this.retryTimers.delete(slotKey);
@@ -98,7 +99,7 @@ export class DailyRaceScheduler {
   }
 
   start(): void {
-    this.task = cron.schedule(DAILY_SCORING_CRON, () => {
+    this.task = cron.schedule(this.options.schedule ?? DAILY_SCORING_CRON, () => {
       void this.runSlot().catch((error) => console.error(JSON.stringify({ level: 'error', component: 'scoring-scheduler', error: String(error) })));
     }, { timezone: this.options.timezone ?? BUENOS_AIRES_TIMEZONE, noOverlap: true });
   }
