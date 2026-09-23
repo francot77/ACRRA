@@ -19,6 +19,7 @@ export type PendingRun = {
 export interface RunSlotStore {
   ensurePending(slotKey: string): void;
   claim(slotKey: string, source: ValidatedRaceSource): boolean;
+  release(slotKey: string): boolean;
   expire(slotKey: string): boolean;
   get(slotKey: string): PendingRun | null;
 }
@@ -35,6 +36,15 @@ export class SqliteRunSlotStore implements RunSlotStore {
       `UPDATE scoring_run_slots SET status = 'claimed', source_file_name = ?, source_file_hash = ?, claimed_at = ?
        WHERE slot_key = ? AND status = 'pending'`
     ).run(source.fileName, source.fileHash, new Date().toISOString(), slotKey) as { changes: number };
+    return result.changes === 1;
+  }
+
+  release(slotKey: string): boolean {
+    const result = this.database.prepare(
+      `UPDATE scoring_run_slots
+       SET status = 'pending', source_file_name = NULL, source_file_hash = NULL, claimed_at = NULL
+       WHERE slot_key = ? AND status = 'claimed'`
+    ).run(slotKey) as { changes: number };
     return result.changes === 1;
   }
 
@@ -103,7 +113,12 @@ export class DailyRaceScheduler {
       return 'pending';
     }
     if (!this.options.store.claim(slotKey, source)) return 'duplicate';
-    await this.options.onClaim(slotKey, source);
+    try {
+      await this.options.onClaim(slotKey, source);
+    } catch (error) {
+      this.options.store.release(slotKey);
+      throw error;
+    }
     return 'claimed';
   }
 

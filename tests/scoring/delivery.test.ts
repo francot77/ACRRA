@@ -89,3 +89,27 @@ test('eligible scheduled run scores once and delivers the dedicated report', asy
   assert.equal(await scheduler.runSlot(), 'duplicate');
   database.close();
 });
+
+test('consolidates duplicate GUID results before scoring and persistence', async () => {
+  const database = openDatabase(join(mkdtempSync(join(tmpdir(), 'acrra-duplicate-result-')), 'scoring.sqlite'));
+  const store = new ScoringStore(database);
+  const service = new ScoringRunService(store, 'https://example.invalid/results', async () => 'sent');
+  const duplicateSource = source();
+  duplicateSource.race.drivers = [
+    { ...duplicateSource.race.drivers[0], carId: 16, position: 2, totalTime: 100 },
+    { ...duplicateSource.race.drivers[0], carId: 0, position: 13, totalTime: 0 }
+  ];
+
+  const processed = await service.process('2026-08-20', duplicateSource);
+
+  assert.equal(processed.committed, 'inserted');
+  assert.equal(database.prepare('SELECT count(*) AS count FROM scoring_results WHERE run_id = ?').get(processed.runId).count, 1);
+  const storedResult = database.prepare('SELECT position, classified FROM scoring_results WHERE run_id = ?').get(processed.runId);
+  assert.equal(storedResult.position, 2);
+  assert.equal(storedResult.classified, 1);
+  const storedAward = database.prepare('SELECT position, points FROM championship_awards WHERE run_id = ?').get(processed.runId);
+  assert.equal(storedAward.position, 2);
+  assert.equal(storedAward.points, 18);
+  assert.deepEqual(store.getStandings(), [{ driverName: 'Pilot One', points: 18, races: 1, wins: 0, podiums: 1 }]);
+  database.close();
+});

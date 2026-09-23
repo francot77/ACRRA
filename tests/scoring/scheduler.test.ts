@@ -8,6 +8,7 @@ class MemorySlots implements RunSlotStore {
   rows = new Map<string, { status: 'pending' | 'claimed' | 'expired'; sourceFileName: string | null }>();
   ensurePending(key: string) { this.rows.set(key, this.rows.get(key) ?? { status: 'pending', sourceFileName: null }); }
   claim(key: string, source: ValidatedRaceSource) { const row = this.rows.get(key); if (!row || row.status !== 'pending') return false; row.status = 'claimed'; row.sourceFileName = source.fileName; return true; }
+  release(key: string) { const row = this.rows.get(key); if (!row || row.status !== 'claimed') return false; row.status = 'pending'; row.sourceFileName = null; return true; }
   expire(key: string) { const row = this.rows.get(key); if (!row || row.status !== 'pending') return false; row.status = 'expired'; return true; }
   get(key: string) { const row = this.rows.get(key); return row ? { slotKey: key, ...row } : null; }
 }
@@ -69,6 +70,27 @@ test('pending slot retries late files and claims only once across restart', asyn
   assert.equal(await retry.runSlot(), 'claimed');
   assert.equal(await retry.runSlot(), 'duplicate');
   assert.equal(store.get('2026-08-20')?.status, 'claimed');
+});
+
+test('onClaim failure releases the slot so the same run can be retried', async () => {
+  const store = new MemorySlots();
+  let attempts = 0;
+  const source: ValidatedRaceSource = { fileName: 'race.json', filePath: 'race.json', fileHash: 'hash', race: {} as ValidatedRaceSource['race'] };
+  const scheduler = new DailyRaceScheduler({
+    source: { resultsDir: '', sourceGlob: '*_RACE.json', minFileAgeMs: 0 },
+    store,
+    findSource: async () => source,
+    onClaim: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('duplicate scoring identity');
+    }
+  });
+
+  await assert.rejects(() => scheduler.runSlot(new Date('2026-08-20T21:00:00-03:00')), /duplicate scoring identity/);
+  assert.equal(store.get('2026-08-20')?.status, 'pending');
+  assert.equal(await scheduler.runSlot(new Date('2026-08-20T21:00:00-03:00')), 'claimed');
+  assert.equal(store.get('2026-08-20')?.status, 'claimed');
+  assert.equal(attempts, 2);
 });
 
 test('pending slot expires at the window close and cannot reuse a future-day race', async () => {

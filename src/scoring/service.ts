@@ -5,6 +5,23 @@ import { calculateAwards } from './calculatePoints';
 import { ScoringStore } from './store';
 import type { FinishResult } from './types';
 
+export function consolidateFinishResults(results: readonly FinishResult[]): FinishResult[] {
+  const consolidated = new Map<number | string, FinishResult>();
+
+  for (const result of results) {
+    const key = result.driverId ?? result.driverGuid ?? result.driverName;
+    const existing = consolidated.get(key);
+    if (!existing || isPreferredFinishResult(result, existing)) consolidated.set(key, result);
+  }
+
+  return [...consolidated.values()];
+}
+
+function isPreferredFinishResult(candidate: FinishResult, existing: FinishResult): boolean {
+  if (candidate.classified !== existing.classified) return candidate.classified;
+  return candidate.position < existing.position;
+}
+
 export type DeliveryState = 'pending' | 'sent' | 'failed-retryable';
 
 export type ScoringRunResult = Readonly<{
@@ -25,10 +42,10 @@ export class ScoringRunService {
   async process(slotKey: string, source: ValidatedRaceSource): Promise<ScoringRunResult> {
     const raceId = `race:${source.fileName}:${source.fileHash}`;
     const runId = `run:${slotKey}:${source.fileHash}`;
-    const results = source.race.drivers.map<FinishResult>((driver) => {
+    const results = consolidateFinishResults(source.race.drivers.map<FinishResult>((driver) => {
       const identity = this.store.identities.resolve(driver.name, driver.guid);
       return { driverName: identity.displayName, driverGuid: identity.guid, driverId: identity.id, position: driver.position, classified: driver.totalTime > 0 };
-    });
+    }));
     const calculated = calculateAwards(results);
     const awards = calculated.map((result) => {
       const identity = this.store.identities.resolve(result.driverName, result.driverGuid);
