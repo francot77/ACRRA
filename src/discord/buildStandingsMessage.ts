@@ -33,7 +33,7 @@ export function buildStandingsMessage(input: {
   const title = 'Copa NHRacing — resultados de hoy';
   const description = rows.length === 0
     ? 'Sin pilotos registrados.'
-    : rows.map((row) => `${row.position}. ${row.driverName} — ${row.points} pts · ${row.races} carreras · ${row.wins} victorias · ${row.podiums} podios`).join('\n');
+    : rows.map((row) => `${row.position}. ${row.driverName} — ${row.points} pts · ${formatCount(row.races, 'carrera', 'carreras')} · ${formatCount(row.wins, 'victoria', 'victorias')} · ${formatCount(row.podiums, 'podio', 'podios')}`).join('\n');
 
   return {
     ...input,
@@ -48,10 +48,14 @@ export function buildStandingsMessage(input: {
           title,
           description,
           color: 0x2f7df6,
-          fields: [{ name: 'Clasificación', value: description, inline: false }],
-          footer: { text: `Race ${input.raceId} · Run ${input.runId}` }
+          fields: [],
+          footer: { text: 'Clasificación del campeonato' }
         }]
       }
     }
   };
+}
+
+function formatCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }

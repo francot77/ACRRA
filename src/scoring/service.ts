@@ -85,10 +85,16 @@ export class ScoringRunService {
     return this.deliverOutbox(reportId);
   }
 
-  private async deliverOutbox(reportId: string): Promise<DeliveryState> {
+  async resendLatest(): Promise<DeliveryState> {
+    const entry = this.store.getLatestReport();
+    if (!entry) throw new Error('No persisted scoring report exists');
+    return this.deliverOutbox(entry.reportId, true);
+  }
+
+  private async deliverOutbox(reportId: string, force = false): Promise<DeliveryState> {
     const entry = this.store.getReport(reportId);
     if (!entry) throw new Error(`Scoring report ${reportId} was not found`);
-    if (entry.status === 'sent') return 'sent';
+    if (entry.status === 'sent' && !force) return 'sent';
     const report = JSON.parse(entry.payloadJson) as StandingsReport;
     const result = await this.deliver(this.webhookUrl, report);
     if (result === 'sent') {

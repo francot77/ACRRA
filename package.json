@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
     "dev": "tsx src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "resend-last-standings": "node dist/cli.js resend-last-standings"
   },
   "dependencies": {
     "chokidar": "^5.0.0",

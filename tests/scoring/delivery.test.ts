@@ -43,6 +43,22 @@ test('standings report is stable, named, and limited to twenty drivers', () => {
   assert.match(report.message.webhookBody.embeds[0].description, /Pilot 11/);
 });
 
+test('standings message renders one readable ranking without internal identifiers', () => {
+  const report = buildStandingsMessage({
+    reportId: 'report:internal',
+    raceId: 'race:internal',
+    runId: 'run:internal',
+    rows: [{ driverName: 'Winner', position: 1, points: 25, races: 1, wins: 1, podiums: 1 }]
+  });
+  const embed = report.message.webhookBody.embeds[0];
+
+  assert.equal(embed.fields.length, 0);
+  assert.equal(embed.description, '1. Winner — 25 pts · 1 carrera · 1 victoria · 1 podio');
+  assert.equal(embed.footer.text, 'Clasificación del campeonato');
+  assert.doesNotMatch(embed.footer.text, /race:|run:/i);
+  assert.doesNotMatch(embed.description, /Clasificación/);
+});
+
 test('failed delivery retries the stored report without rescoring or duplicate awards', async () => {
   const path = join(mkdtempSync(join(tmpdir(), 'acrra-delivery-')), 'scoring.sqlite');
   const firstDb = openDatabase(path);
@@ -66,6 +82,28 @@ test('failed delivery retries the stored report without rescoring or duplicate a
   assert.equal(restartedDb.prepare('SELECT count(*) AS count FROM championship_awards').get().count, 2);
   assert.equal(restartedDb.prepare("SELECT status FROM scoring_report_outbox WHERE report_id = ?").get(processed.reportId).status, 'sent');
   restartedDb.close();
+});
+
+test('selects the newest persisted report and force-resends an already sent report', async () => {
+  const database = openDatabase(join(mkdtempSync(join(tmpdir(), 'acrra-resend-')), 'scoring.sqlite'));
+  const store = new ScoringStore(database);
+  const report = buildStandingsMessage({ reportId: 'latest-report', raceId: 'race-latest', runId: 'run-latest', rows: [] });
+  database.prepare('INSERT INTO scoring_runs (run_id, race_id, committed_at) VALUES (?, ?, ?)').run('run-latest', 'race-latest', '2026-08-20T00:00:00.000Z');
+  database.prepare('INSERT INTO scoring_report_outbox (report_id, run_id, status, payload_json, attempts, created_at) VALUES (?, ?, ?, ?, ?, ?)').run('older-report', 'run-latest', 'sent', JSON.stringify(report), 1, '2026-08-19T00:00:00.000Z');
+  database.prepare('INSERT INTO scoring_runs (run_id, race_id, committed_at) VALUES (?, ?, ?)').run('run-newest', 'race-newest', '2026-08-20T00:00:00.000Z');
+  database.prepare('INSERT INTO scoring_report_outbox (report_id, run_id, status, payload_json, attempts, created_at) VALUES (?, ?, ?, ?, ?, ?)').run('latest-report', 'run-newest', 'sent', JSON.stringify({ ...report, reportId: 'latest-report' }), 3, '2026-08-20T00:00:00.000Z');
+  assert.equal(store.getLatestReport()?.reportId, 'latest-report');
+
+  let deliveredReportId = '';
+  const service = new ScoringRunService(store, 'https://example.invalid/results', async (_url, delivered) => {
+    deliveredReportId = delivered.reportId;
+    return 'sent';
+  });
+  assert.equal(await service.resendLatest(), 'sent');
+  assert.equal(deliveredReportId, 'latest-report');
+  assert.equal(database.prepare('SELECT attempts FROM scoring_report_outbox WHERE report_id = ?').get('latest-report').attempts, 4);
+  assert.equal(database.prepare('SELECT count(*) AS count FROM championship_awards').get().count, 0);
+  database.close();
 });
 
 test('eligible scheduled run scores once and delivers the dedicated report', async () => {

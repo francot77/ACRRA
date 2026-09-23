@@ -37,6 +37,14 @@ docker compose -f docker-compose.oracle.yml up -d --build
 docker logs -f ac-race-monitor
 ```
 
+To resend the newest persisted standings report without reprocessing a race or changing scoring data:
+
+```bash
+docker compose -f docker-compose.oracle.yml exec ac-race-monitor node dist/cli.js resend-last-standings
+```
+
+The command requires `SCORING_RESULTS_WEBHOOK_URL`, fails when no persisted report exists, and forces delivery even when the report was already sent.
+
 ### Oracle env edits
 
 ```dotenv
