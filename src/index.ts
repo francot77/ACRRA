@@ -153,7 +153,8 @@ export async function bootstrapApplication(
           sourceGlob: config.scoringSourceGlob,
            minFileAgeMs: config.minFileAgeMs,
            raceWindowMinutes: config.scoringRaceWindowMinutes,
-           schedule: config.scoringSchedule
+            schedule: config.scoringSchedule,
+            sourceTimezone: config.scoringSourceTimezone
          },
          store: new SqliteRunSlotStore(database),
          schedule: config.scoringSchedule,

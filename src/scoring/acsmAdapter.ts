@@ -6,6 +6,7 @@ import type { ParsedRace } from '../types/assetto';
 import { DEFAULT_DAILY_SCORING_SCHEDULE, type DailyScoringSchedule } from './schedule';
 
 export const DEFAULT_SCORING_TIMEZONE = 'America/Argentina/Buenos_Aires' as const;
+export const DEFAULT_SCORING_SOURCE_TIMEZONE = 'UTC' as const;
 export const DEFAULT_SCORING_SCHEDULE = DEFAULT_DAILY_SCORING_SCHEDULE;
 export type ScoringSchedule = DailyScoringSchedule;
 
@@ -26,6 +27,7 @@ export type RaceSourceConfig = {
   stabilityDelayMs?: number;
   raceWindowMinutes?: number;
   schedule?: ScoringSchedule;
+  sourceTimezone?: string;
 };
 
 export type ValidatedRaceSource = {
@@ -47,12 +49,13 @@ export async function findFirstEligibleRace(
   }
   const window = getScoringWindowBounds(slotDate, timezone, raceWindowMinutes, config.schedule);
   if (!window) return null;
+  const sourceTimezone = config.sourceTimezone ?? DEFAULT_SCORING_SOURCE_TIMEZONE;
   const entries = await readdir(config.resultsDir, { withFileTypes: true }).catch(() => []);
   const names = entries
     .filter((entry) => entry.isFile() && matchesGlob(entry.name, config.sourceGlob))
     .map((entry) => entry.name)
-    .map((fileName) => ({ fileName, parsed: parseRaceFilenameTimestamp(fileName, timezone) }))
-    .filter(({ parsed }) => parsed !== null && parsed.localDate === slotDate && parsed.timestamp >= window.start && parsed.timestamp < window.end && parsed.timestamp <= now)
+    .map((fileName) => ({ fileName, parsed: parseRaceFilenameTimestamp(fileName, sourceTimezone) }))
+    .filter(({ parsed }) => parsed !== null && parsed.timestamp >= window.start && parsed.timestamp < window.end && parsed.timestamp <= now)
     .sort((left, right) => left.parsed!.timestamp.getTime() - right.parsed!.timestamp.getTime())
     .map(({ fileName }) => fileName);
 
@@ -79,7 +82,7 @@ export function getScoringWindowBounds(
 
 export function parseRaceFilenameTimestamp(
   fileName: string,
-  timezone: string = DEFAULT_SCORING_TIMEZONE
+  timezone: string = DEFAULT_SCORING_SOURCE_TIMEZONE
 ): ParsedRaceFilenameTimestamp | null {
   const match = /^(\d{4})_(\d{1,2})_(\d{1,2})_(\d{1,2})_(\d{1,2})_RACE\.json$/.exec(fileName);
   if (!match) return null;
@@ -106,10 +109,10 @@ export function parseRaceFilenameTimestamp(
 
 export async function validateRaceFile(
   filePath: string,
-  config: Pick<RaceSourceConfig, 'minFileAgeMs' | 'stabilityDelayMs'>,
+  config: Pick<RaceSourceConfig, 'minFileAgeMs' | 'stabilityDelayMs' | 'sourceTimezone'>,
   now = new Date()
 ): Promise<ValidatedRaceSource | null> {
-  if (!parseRaceFilenameTimestamp(basename(filePath))) return null;
+  if (!parseRaceFilenameTimestamp(basename(filePath), config.sourceTimezone ?? DEFAULT_SCORING_SOURCE_TIMEZONE)) return null;
   const first = await stat(filePath).catch(() => null);
   if (!first || now.getTime() - first.mtimeMs < config.minFileAgeMs) return null;
 

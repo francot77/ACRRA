@@ -21,6 +21,7 @@ const envSchema = z.object({
     }
   }),
   SCORING_TIMEZONE: z.string().refine((value) => value === 'America/Argentina/Buenos_Aires', 'SCORING_TIMEZONE must be America/Argentina/Buenos_Aires').default('America/Argentina/Buenos_Aires'),
+  SCORING_SOURCE_TIMEZONE: z.string().default('UTC'),
   SCORING_RACE_WINDOW_MINUTES: z.coerce.number().int().positive().default(60),
   SCORING_DST_POLICY: z.enum(['reject-ambiguous']).default('reject-ambiguous'),
   SCORING_RESULTS_WEBHOOK_URL: z.string().default(''),
@@ -45,6 +46,7 @@ export type AppConfig = {
   scoringSourceGlob: string;
   scoringSchedule: DailyScoringSchedule;
   scoringTimezone: 'America/Argentina/Buenos_Aires';
+  scoringSourceTimezone: string;
   scoringRaceWindowMinutes: number;
   scoringDstPolicy: 'reject-ambiguous';
   scoringResultsWebhookUrl?: string;
@@ -72,6 +74,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     scoringSourceGlob: parsed.SCORING_SOURCE_GLOB,
     scoringSchedule: parsed.SCORING_SCHEDULE,
     scoringTimezone: parsed.SCORING_TIMEZONE,
+    scoringSourceTimezone: parsed.SCORING_SOURCE_TIMEZONE,
     scoringRaceWindowMinutes: parsed.SCORING_RACE_WINDOW_MINUTES,
     scoringDstPolicy: parsed.SCORING_DST_POLICY,
     scoringResultsWebhookUrl: parsed.SCORING_RESULTS_WEBHOOK_URL,

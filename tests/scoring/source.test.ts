@@ -15,6 +15,7 @@ const config = (resultsDir: string, schedule?: string) => ({
   sourceGlob: '*_RACE.json',
   minFileAgeMs: 1000,
   stabilityDelayMs: 1,
+  sourceTimezone: 'America/Argentina/Buenos_Aires',
   ...(schedule ? { schedule: parseDailyScoringSchedule(schedule) } : {})
 });
 
@@ -38,7 +39,7 @@ test('source adapter selects the earliest eligible 21:00+ export by parsed times
   await stableFile(dir, '2026_6_20_21_5_RACE.json');
   const source = await findFirstEligibleRace(config(dir), now, '2026-06-20');
   assert.equal(source?.fileName, '2026_6_20_21_5_RACE.json');
-  assert.equal(parseRaceFilenameTimestamp('2026_6_20_1_52_RACE.json')?.timestamp.toISOString(), '2026-06-20T04:52:00.000Z');
+  assert.equal(parseRaceFilenameTimestamp('2026_6_20_1_52_RACE.json')?.timestamp.toISOString(), '2026-06-20T01:52:00.000Z');
   assert.equal(parseRaceFilenameTimestamp('2026_6_20_1_52_RACE.json')?.localDate, '2026-06-20');
 });
 
@@ -66,6 +67,22 @@ test('source adapter accepts the configured 12:00 window and excludes 13:00', as
   const lateDir = await mkdtemp(join(tmpdir(), 'acrra-source-noon-window-late-'));
   await stableFile(lateDir, '2026_6_20_13_0_RACE.json', noonNow);
   assert.equal(await findFirstEligibleRace(config(lateDir, '0 12 * * *'), noonNow, '2026-06-20'), null);
+});
+
+test('source adapter compares UTC filename instants with the Buenos Aires scoring window', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'acrra-source-timezone-'));
+  const noonNow = new Date('2026-06-20T17:00:00.000Z');
+  await stableFile(dir, '2026_6_20_16_39_RACE.json', noonNow);
+  const source = await findFirstEligibleRace({ ...config(dir, '0 13 * * *'), sourceTimezone: 'UTC' }, noonNow, '2026-06-20', 'America/Argentina/Buenos_Aires');
+  assert.equal(source?.fileName, '2026_6_20_16_39_RACE.json');
+});
+
+test('source adapter uses instants across source-date and scoring-date boundaries', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'acrra-source-date-boundary-'));
+  const nowAtWindow = new Date('2026-06-21T00:45:00.000Z');
+  await stableFile(dir, '2026_6_21_0_39_RACE.json', nowAtWindow);
+  const source = await findFirstEligibleRace({ ...config(dir), sourceTimezone: 'UTC' }, nowAtWindow, '2026-06-20', 'America/Argentina/Buenos_Aires');
+  assert.equal(source?.fileName, '2026_6_21_0_39_RACE.json');
 });
 
 test('source adapter rejects invalid suffixes, malformed JSON, and non-RACE JSON', async () => {
@@ -99,6 +116,7 @@ test('source adapter rejects a file that changes during the stability window', a
 
 test('scoring race window setting defaults to 60 minutes and rejects non-positive values', () => {
   assert.equal(loadConfig({}).scoringRaceWindowMinutes, 60);
+  assert.equal(loadConfig({}).scoringSourceTimezone, 'UTC');
   assert.deepEqual(loadConfig({}).scoringSchedule, { expression: '0 21 * * *', minute: 0, hour: 21 });
   assert.deepEqual(loadConfig({ SCORING_SCHEDULE: '0 10 * * *' }).scoringSchedule, { expression: '0 10 * * *', minute: 0, hour: 10 });
   assert.deepEqual(loadConfig({ SCORING_SCHEDULE: '0 13 * * *' }).scoringSchedule, { expression: '0 13 * * *', minute: 0, hour: 13 });

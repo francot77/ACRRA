@@ -58,6 +58,8 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 | `MIN_FILE_AGE_MS` | `3000` | Espera mínima antes de parsear. |
 | `WATCH_GLOB` | `*RACE*.json` | Filtro de archivos observados. |
 | `SCORING_SCHEDULE` | `0 21 * * *` | Any valid daily cron schedule in the form `minute hour * * *`, using Buenos Aires time. The production default is `21:00`. |
+| `SCORING_TIMEZONE` | `America/Argentina/Buenos_Aires` | Timezone for the scheduler and scoring window. |
+| `SCORING_SOURCE_TIMEZONE` | `UTC` | Timezone used to interpret Assetto result filename timestamps. The resulting instant is compared with the scoring window; no scheduler offset is applied. |
 | `DEFAULT_SAFETY_RATING` | `75` | Safety inicial para GUIDs nuevos. |
 | `SAFETY_MEMORY_FACTOR` | `0.85` | Memoria histórica de safety. |
 | `MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN` | `3` | Mínimo de pilotos activos para que la carrera puntúe safety. |
