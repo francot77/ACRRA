@@ -113,7 +113,8 @@ export class ScoringRunService {
     const entry = this.store.getReport(reportId);
     if (!entry) throw new Error(`Scoring report ${reportId} was not found`);
     if (entry.status === 'sent' && !force) return 'sent';
-    const report = JSON.parse(entry.payloadJson) as StandingsReport;
+    const report = rerenderPersistedReport(entry.payloadJson, entry.reportId, entry.runId);
+    this.store.updateReportPayload(reportId, JSON.stringify(report));
     const result = await this.deliver(this.webhookUrl, report);
     if (result === 'sent') {
       this.store.markReportSent(reportId);
@@ -122,4 +123,24 @@ export class ScoringRunService {
     this.store.markReportFailed(reportId, result === 'logged' ? 'Dedicated scoring results webhook is not configured' : 'Discord delivery failed');
     return 'failed-retryable';
   }
+}
+
+function rerenderPersistedReport(payloadJson: string, reportId: string, runId: string): StandingsReport {
+  const persisted = JSON.parse(payloadJson) as Partial<StandingsReport>;
+  if (!Array.isArray(persisted.rows)) throw new Error(`Scoring report ${reportId} has invalid standings rows`);
+
+  const currentRace = isCurrentRacePresentation(persisted.currentRace) ? persisted.currentRace : undefined;
+  return buildStandingsMessage({
+    reportId,
+    raceId: typeof persisted.raceId === 'string' ? persisted.raceId : `legacy:${reportId}`,
+    runId,
+    rows: persisted.rows,
+    currentRace
+  });
+}
+
+function isCurrentRacePresentation(value: unknown): value is NonNullable<StandingsReport['currentRace']> {
+  if (!value || typeof value !== 'object') return false;
+  const race = value as Partial<NonNullable<StandingsReport['currentRace']>>;
+  return typeof race.trackName === 'string' && typeof race.driverCount === 'number' && Array.isArray(race.results);
 }

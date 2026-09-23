@@ -105,4 +105,8 @@ export class ScoringStore {
   markReportFailed(reportId: string, error: string): void {
     this.database.prepare("UPDATE scoring_report_outbox SET status = 'failed-retryable', attempts = attempts + 1, last_error = ? WHERE report_id = ?").run(error, reportId);
   }
+
+  updateReportPayload(reportId: string, payloadJson: string): void {
+    this.database.prepare('UPDATE scoring_report_outbox SET payload_json = ? WHERE report_id = ?').run(payloadJson, reportId);
+  }
 }

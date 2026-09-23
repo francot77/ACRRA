@@ -32,7 +32,7 @@ export type StandingsReport = Readonly<{
   runId: string;
   title: string;
   rows: readonly StandingsRow[];
-  currentRace: CurrentRacePresentation;
+  currentRace?: CurrentRacePresentation;
   message: DiscordWebhookMessage;
 }>;
 
@@ -41,33 +41,18 @@ export function buildStandingsMessage(input: {
   raceId: string;
   runId: string;
   rows: readonly StandingsInputRow[];
-  currentRace: CurrentRacePresentation;
+  currentRace?: CurrentRacePresentation;
 }): StandingsReport {
   const rows: StandingsRow[] = input.rows
     .map((row) => ({ ...row, races: row.races ?? 0, wins: row.wins ?? 0, podiums: row.podiums ?? 0 }))
     .sort((left, right) => left.position - right.position)
     .slice(0, 20);
   const title = 'Copa NHRacing — resultados de hoy';
-  const race = normalizeRace(input.currentRace);
-  const winner = race.results.find((result) => result.status === 'finished' && result.position === 1);
-  const fastestLap = race.results
-    .filter((result) => result.bestLap != null && result.bestLap > 0)
-    .sort((left, right) => left.bestLap! - right.bestLap!)[0];
-  const metadata = [
-    `📍 ${truncate(race.trackName, 50)} · ${truncate(race.trackConfig || 'Layout standard', 40)}`,
-    `🚗 ${race.driverCount} ${race.driverCount === 1 ? 'piloto' : 'pilotos'}`,
-    winner ? `🏆 Ganador: ${truncate(winner.driverName, 50)}` : null,
-    fastestLap ? `⚡ Vuelta rápida: ${truncate(fastestLap.driverName, 35)} · ${formatLapTime(fastestLap.bestLap!)}` : null
-  ].filter((line): line is string => line !== null).join('\n');
-  const currentResult = formatCurrentResult(race.results);
+  const race = input.currentRace ? normalizeRace(input.currentRace) : undefined;
   const classification = rows.length === 0 ? 'Sin pilotos registrados.' : formatClassification(rows);
-  const description = [
-    metadata,
-    'Resultado de la carrera',
-    currentResult,
-    'Clasificación general',
-    `\`\`\`\n${classification}\n\`\`\``
-  ].join('\n\n');
+  const description = race
+    ? formatFullDescription(race, classification)
+    : `Clasificación general\n\n\`\`\`\n${classification}\n\`\`\``;
 
   return {
     ...input,
@@ -89,6 +74,27 @@ export function buildStandingsMessage(input: {
       }
     }
   };
+}
+
+function formatFullDescription(race: CurrentRacePresentation, classification: string): string {
+  const winner = race.results.find((result) => result.status === 'finished' && result.position === 1);
+  const fastestLap = race.results
+    .filter((result) => result.bestLap != null && result.bestLap > 0)
+    .sort((left, right) => left.bestLap! - right.bestLap!)[0];
+  const metadata = [
+    `📍 ${truncate(race.trackName, 50)} · ${truncate(race.trackConfig || 'Layout standard', 40)}`,
+    `🚗 ${race.driverCount} ${race.driverCount === 1 ? 'piloto' : 'pilotos'}`,
+    winner ? `🏆 Ganador: ${truncate(winner.driverName, 50)}` : null,
+    fastestLap ? `⚡ Vuelta rápida: ${truncate(fastestLap.driverName, 35)} · ${formatLapTime(fastestLap.bestLap!)}` : null
+  ].filter((line): line is string => line !== null).join('\n');
+
+  return [
+    metadata,
+    'Resultado de la carrera',
+    formatCurrentResult(race.results),
+    'Clasificación general',
+    `\`\`\n${classification}\n\`\``
+  ].join('\n\n');
 }
 
 function normalizeRace(race: CurrentRacePresentation): CurrentRacePresentation {

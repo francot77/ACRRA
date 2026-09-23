@@ -129,6 +129,42 @@ test('selects the newest persisted report and force-resends an already sent repo
   database.close();
 });
 
+test('resend re-renders a legacy payload as a compact classification without technical identifiers', async () => {
+  const database = openDatabase(join(mkdtempSync(join(tmpdir(), 'acrra-legacy-resend-')), 'scoring.sqlite'));
+  const store = new ScoringStore(database);
+  const legacyPayload = {
+    reportId: 'legacy-report',
+    raceId: 'race:legacy',
+    runId: 'run:legacy',
+    title: 'Old standings',
+    rows: [{ driverName: 'Legacy Winner', position: 1, points: 25, races: 1, wins: 1, podiums: 1 }],
+    message: {
+      title: 'Old standings',
+      summaryText: 'Old duplicated legacy content race:legacy run:legacy',
+      webhookBody: { content: 'Old standings', embeds: [{ title: 'Old standings', description: 'Old duplicated legacy content', color: 1, fields: [], footer: { text: 'run:legacy' } }] }
+    }
+  };
+  database.prepare('INSERT INTO scoring_runs (run_id, race_id, committed_at) VALUES (?, ?, ?)').run('run:legacy', 'race:legacy', '2026-08-20T00:00:00.000Z');
+  database.prepare('INSERT INTO scoring_report_outbox (report_id, run_id, status, payload_json, attempts, created_at) VALUES (?, ?, ?, ?, ?, ?)').run('legacy-report', 'run:legacy', 'sent', JSON.stringify(legacyPayload), 1, '2026-08-20T00:00:00.000Z');
+
+  let deliveredDescription = '';
+  const service = new ScoringRunService(store, 'https://example.invalid/results', async (_url, report) => {
+    deliveredDescription = report.message.webhookBody.embeds[0].description;
+    assert.equal(report.reportId, 'legacy-report');
+    return 'sent';
+  });
+
+  assert.equal(await service.resendLatest(), 'sent');
+  assert.match(deliveredDescription, /Clasificación general/);
+  assert.match(deliveredDescription, /Legacy Winner.*25.*1.*1/);
+  assert.doesNotMatch(deliveredDescription, /race:|run:|Old duplicated/);
+  const stored = JSON.parse(database.prepare('SELECT payload_json FROM scoring_report_outbox WHERE report_id = ?').get('legacy-report').payload_json);
+  assert.equal(stored.reportId, 'legacy-report');
+  assert.equal(stored.currentRace, undefined);
+  assert.doesNotMatch(stored.message.webhookBody.embeds[0].description, /race:|run:/i);
+  database.close();
+});
+
 test('eligible scheduled run scores once and delivers the dedicated report', async () => {
   const database = openDatabase(join(mkdtempSync(join(tmpdir(), 'acrra-scheduled-')), 'scoring.sqlite'));
   const store = new ScoringStore(database);
