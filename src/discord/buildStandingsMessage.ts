@@ -50,9 +50,12 @@ export function buildStandingsMessage(input: {
   const title = 'Copa NHRacing — resultados de hoy';
   const race = input.currentRace ? normalizeRace(input.currentRace) : undefined;
   const classification = rows.length === 0 ? 'Sin pilotos registrados.' : formatClassification(rows);
-  const description = race
-    ? formatFullDescription(race, classification)
-    : `Clasificación general\n\n\`\`\`\n${classification}\n\`\`\``;
+  const description = race ? formatRaceMetadata(race) : 'Resultados del campeonato';
+  const fields = [
+    ...(race ? formatFields('Resultado de la carrera', formatCurrentResult(race.results)) : []),
+    ...formatFields('🏆 Campeonato', classification)
+  ];
+  const summaryText = [title, description, ...fields.map((field) => `${field.name}\n${field.value}`)].join('\n\n');
 
   return {
     ...input,
@@ -61,22 +64,22 @@ export function buildStandingsMessage(input: {
     title,
     message: {
       title,
-      summaryText: `${title}\n${description}`,
+      summaryText,
       webhookBody: {
         content: title,
         embeds: [{
           title,
           description,
           color: 0x2f7df6,
-          fields: [],
-          footer: { text: 'Clasificación del campeonato' }
+          fields,
+          footer: { text: 'ACRRA · Resultados de hoy' }
         }]
       }
     }
   };
 }
 
-function formatFullDescription(race: CurrentRacePresentation, classification: string): string {
+function formatRaceMetadata(race: CurrentRacePresentation): string {
   const winner = race.results.find((result) => result.status === 'finished' && result.position === 1);
   const fastestLap = race.results
     .filter((result) => result.bestLap != null && result.bestLap > 0)
@@ -90,11 +93,7 @@ function formatFullDescription(race: CurrentRacePresentation, classification: st
 
   return [
     metadata,
-    'Resultado de la carrera',
-    formatCurrentResult(race.results),
-    'Clasificación general',
-    `\`\`\n${classification}\n\`\``
-  ].join('\n\n');
+  ].join('\n');
 }
 
 function normalizeRace(race: CurrentRacePresentation): CurrentRacePresentation {
@@ -107,15 +106,38 @@ function normalizeRace(race: CurrentRacePresentation): CurrentRacePresentation {
 function formatCurrentResult(results: readonly CurrentRaceResult[]): string {
   if (results.length === 0) return 'Sin resultados registrados.';
   return results.map((result) => {
-    const medal = result.status === 'finished' && result.position <= 3 ? ['🥇', '🥈', '🥉'][result.position - 1] : `${result.position}.`;
+    const medal = result.position <= 3 ? ['🥇', '🥈', '🥉'][result.position - 1] : `${result.position}.`;
     const status = result.status === 'dnf' ? ' — DNF' : result.status === 'dns' ? ' — DNS' : '';
-    return `${medal} ${truncate(result.driverName, 48)} — ${result.points} pts${status}`;
+    const driverName = result.position <= 3 ? `**${truncate(result.driverName, 48)}**` : truncate(result.driverName, 48);
+    return `${medal} ${driverName} — ${result.points} pts${status}`;
   }).join('\n');
 }
 
 function formatClassification(rows: readonly StandingsRow[]): string {
-  const header = '#  Piloto'.padEnd(24) + 'Pts  V  Pod';
-  return [header, ...rows.map((row) => `${String(row.position).padStart(2)} ${truncate(row.driverName, 20).padEnd(20)} ${String(row.points).padStart(3)} ${String(row.wins).padStart(2)} ${String(row.podiums).padStart(4)}`)].join('\n');
+  return rows.map((row) => {
+    const stats = [
+      row.wins > 0 ? `${row.wins} ${row.wins === 1 ? 'victoria' : 'victorias'}` : null,
+      row.podiums > 0 ? `${row.podiums} ${row.podiums === 1 ? 'podio' : 'podios'}` : null
+    ].filter((stat): stat is string => stat !== null);
+    return `${row.position}. ${row.position <= 3 ? `**${truncate(row.driverName, 40)}**` : truncate(row.driverName, 40)} · ${row.points} pts${stats.length > 0 ? ` · ${stats.join(' · ')}` : ''}`;
+  }).join('\n');
+}
+
+function formatFields(name: string, value: string): Array<{ name: string; value: string; inline: false }> {
+  const lines = value.split('\n');
+  const fields: Array<{ name: string; value: string; inline: false }> = [];
+  let chunk = '';
+  for (const line of lines) {
+    const candidate = chunk ? `${chunk}\n${line}` : line;
+    if (candidate.length > 1024 && chunk) {
+      fields.push({ name: fields.length === 0 ? name : '\u200b', value: chunk, inline: false });
+      chunk = line;
+    } else {
+      chunk = candidate;
+    }
+  }
+  fields.push({ name: fields.length === 0 ? name : '\u200b', value: chunk || 'Sin datos.', inline: false });
+  return fields;
 }
 
 function formatLapTime(seconds: number): string {

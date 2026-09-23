@@ -40,10 +40,12 @@ test('standings report is stable, named, and limited to twenty drivers', () => {
   });
   assert.equal(report.title, 'Copa NHRacing — resultados de hoy');
   assert.equal(report.rows.length, 12);
-  assert.match(report.message.webhookBody.embeds[0].description, /🥇 Pilot 1 — 12 pts/);
-  assert.match(report.message.webhookBody.embeds[0].description, /Pilot 11/);
-  assert.match(report.message.webhookBody.embeds[0].description, /#  Piloto.*Pts  V  Pod/s);
-  assert.equal((report.message.webhookBody.embeds[0].description.match(/Clasificación general/g) ?? []).length, 1);
+  const embed = report.message.webhookBody.embeds[0];
+  const rendered = JSON.stringify(embed);
+  assert.match(rendered, /🥇 \*\*Pilot 1\*\* — 12 pts/);
+  assert.match(rendered, /4\. Pilot 4/);
+  assert.doesNotMatch(rendered, /```|#  Piloto|Pts  V  Pod/);
+  assert.equal((rendered.match(/🏆 Campeonato/g) ?? []).length, 1);
 });
 
 test('standings message renders one readable ranking without internal identifiers', () => {
@@ -56,13 +58,15 @@ test('standings message renders one readable ranking without internal identifier
   });
   const embed = report.message.webhookBody.embeds[0];
 
-  assert.equal(embed.fields.length, 0);
+  assert.equal(embed.fields.length, 2);
   assert.equal(embed.title, 'Copa NHRacing — resultados de hoy');
   assert.match(embed.description, /Monza · GP/);
-  assert.match(embed.description, /🥇 Winner — 25 pts/);
-  assert.match(embed.description, /Clasificación general/);
-  assert.match(embed.description, /Winner.*25.*1.*1/);
-  assert.equal(embed.footer.text, 'Clasificación del campeonato');
+  assert.match(embed.fields[0].value, /🥇 \*\*Winner\*\* — 25 pts/);
+  assert.equal(embed.fields[0].name, 'Resultado de la carrera');
+  assert.match(embed.fields[1].value, /1\. \*\*Winner\*\* · 25 pts · 1 victoria · 1 podio/);
+  assert.equal(embed.fields[1].name, '🏆 Campeonato');
+  assert.doesNotMatch(JSON.stringify(embed), /```|Clasificación general|Clasificación del campeonato/);
+  assert.equal(embed.footer.text, 'ACRRA · Resultados de hoy');
   assert.doesNotMatch(embed.footer.text, /race:|run:/i);
   assert.doesNotMatch(embed.description, /report:|race:|run:/i);
 });
@@ -76,10 +80,10 @@ test('standings message renders DNF without inventing a normal zero-point finish
       { driverName: 'Retired', position: 2, points: 0, status: 'dnf' }
     ] }
   });
-  const description = report.message.webhookBody.embeds[0].description;
-  assert.match(description, /Retired — 0 pts — DNF/);
-  assert.match(description, /⚡ Vuelta rápida: Winner · 99\.123 s/);
-  assert.doesNotMatch(description, /\.json|report-1|race-1|run-1/);
+  const embed = report.message.webhookBody.embeds[0];
+  assert.match(embed.fields[0].value, /🥈 \*\*Retired\*\* — 0 pts — DNF/);
+  assert.match(embed.description, /⚡ Vuelta rápida: Winner · 99\.123 s/);
+  assert.doesNotMatch(JSON.stringify(embed), /\.json|report-1|race-1|run-1/);
 });
 
 test('failed delivery retries the stored report without rescoring or duplicate awards', async () => {
@@ -149,14 +153,14 @@ test('resend re-renders a legacy payload as a compact classification without tec
 
   let deliveredDescription = '';
   const service = new ScoringRunService(store, 'https://example.invalid/results', async (_url, report) => {
-    deliveredDescription = report.message.webhookBody.embeds[0].description;
+    deliveredDescription = JSON.stringify(report.message.webhookBody.embeds[0]);
     assert.equal(report.reportId, 'legacy-report');
     return 'sent';
   });
 
   assert.equal(await service.resendLatest(), 'sent');
-  assert.match(deliveredDescription, /Clasificación general/);
-  assert.match(deliveredDescription, /Legacy Winner.*25.*1.*1/);
+  assert.match(deliveredDescription, /🏆 Campeonato/);
+  assert.match(deliveredDescription, /1\. \*\*Legacy Winner\*\* · 25 pts · 1 victoria · 1 podio/);
   assert.doesNotMatch(deliveredDescription, /race:|run:|Old duplicated/);
   const stored = JSON.parse(database.prepare('SELECT payload_json FROM scoring_report_outbox WHERE report_id = ?').get('legacy-report').payload_json);
   assert.equal(stored.reportId, 'legacy-report');
@@ -172,7 +176,7 @@ test('eligible scheduled run scores once and delivers the dedicated report', asy
   let deliveredDescription = '';
   const service = new ScoringRunService(store, 'https://example.invalid/results', async (_url, report) => {
     deliveredTitle = report.title;
-    deliveredDescription = report.message.webhookBody.embeds[0].description;
+    deliveredDescription = JSON.stringify(report.message.webhookBody.embeds[0]);
     return 'sent';
   });
   const scheduler = new DailyRaceScheduler({
@@ -187,8 +191,8 @@ test('eligible scheduled run scores once and delivers the dedicated report', asy
   assert.match(deliveredDescription, /Monza/);
   assert.match(deliveredDescription, /🏆 Ganador: Pilot One/);
   assert.match(deliveredDescription, /⚡ Vuelta rápida: Pilot One · 90\.000 s/);
-  assert.match(deliveredDescription, /🥇 Pilot One — 25 pts/);
-  assert.match(deliveredDescription, /#  Piloto.*Pts  V  Pod/s);
+  assert.match(deliveredDescription, /🥇 \*\*Pilot One\*\* — 25 pts/);
+  assert.match(deliveredDescription, /🏆 Campeonato/);
   assert.equal(database.prepare('SELECT count(*) AS count FROM championship_awards').get().count, 2);
   assert.equal(await scheduler.runSlot(), 'duplicate');
   database.close();
