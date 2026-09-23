@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseDailyScoringSchedule, type DailyScoringSchedule } from './scoring/schedule';
 
 const envSchema = z.object({
   RESULTS_DIR: z.string().default('/app/results'),
@@ -11,7 +12,14 @@ const envSchema = z.object({
   WATCH_GLOB: z.string().default('*RACE*.json'),
   SCORING_ENABLED: z.enum(['true', 'false']).default('false'),
   SCORING_SOURCE_GLOB: z.string().min(1).default('*_RACE.json'),
-  SCORING_SCHEDULE: z.enum(['0 21 * * *', '0 12 * * *']).default('0 21 * * *'),
+  SCORING_SCHEDULE: z.string().default('0 21 * * *').transform((value, context) => {
+    try {
+      return parseDailyScoringSchedule(value);
+    } catch (error) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: error instanceof Error ? error.message : 'Invalid scoring schedule' });
+      return z.NEVER;
+    }
+  }),
   SCORING_TIMEZONE: z.string().refine((value) => value === 'America/Argentina/Buenos_Aires', 'SCORING_TIMEZONE must be America/Argentina/Buenos_Aires').default('America/Argentina/Buenos_Aires'),
   SCORING_RACE_WINDOW_MINUTES: z.coerce.number().int().positive().default(60),
   SCORING_DST_POLICY: z.enum(['reject-ambiguous']).default('reject-ambiguous'),
@@ -35,7 +43,7 @@ export type AppConfig = {
   watchGlob: string;
   scoringEnabled: boolean;
   scoringSourceGlob: string;
-  scoringSchedule: '0 21 * * *' | '0 12 * * *';
+  scoringSchedule: DailyScoringSchedule;
   scoringTimezone: 'America/Argentina/Buenos_Aires';
   scoringRaceWindowMinutes: number;
   scoringDstPolicy: 'reject-ambiguous';

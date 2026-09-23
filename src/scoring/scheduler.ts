@@ -1,8 +1,9 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import type { AppDatabase } from '../db/db';
 import { findFirstEligibleRace, getScoringWindowBounds, type RaceSourceConfig, type ValidatedRaceSource } from './acsmAdapter';
+import { DEFAULT_DAILY_SCORING_SCHEDULE, type DailyScoringSchedule } from './schedule';
 
-export const DAILY_SCORING_CRON = '0 21 * * *' as const;
+export const DAILY_SCORING_CRON = DEFAULT_DAILY_SCORING_SCHEDULE.expression;
 export const BUENOS_AIRES_TIMEZONE = 'America/Argentina/Buenos_Aires' as const;
 
 // node-cron owns wall-clock/DST triggering. We do not invent a gap/overlap rule:
@@ -56,7 +57,7 @@ export type SchedulerOptions = {
   source: RaceSourceConfig;
   store: RunSlotStore;
   onClaim: (slotKey: string, source: ValidatedRaceSource) => Promise<void>;
-  schedule?: string;
+  schedule?: DailyScoringSchedule;
   now?: () => Date;
   timezone?: string;
   dstPolicy?: 'reject-ambiguous';
@@ -67,8 +68,16 @@ export type SchedulerOptions = {
 export class DailyRaceScheduler {
   private task: ScheduledTask | null = null;
   private retryTimers = new Map<string, NodeJS.Timeout>();
+  private readonly effectiveSchedule: DailyScoringSchedule;
 
-  constructor(private readonly options: SchedulerOptions) {}
+  constructor(private readonly options: SchedulerOptions) {
+    this.effectiveSchedule = options.schedule ?? options.source.schedule ?? DEFAULT_DAILY_SCORING_SCHEDULE;
+    this.options = {
+      ...options,
+      schedule: this.effectiveSchedule,
+      source: { ...options.source, schedule: this.effectiveSchedule }
+    };
+  }
 
   async runSlot(at = this.options.now?.() ?? new Date(), requestedSlotDate?: string): Promise<'pending' | 'claimed' | 'duplicate' | 'expired'> {
     const timezone = this.options.timezone ?? BUENOS_AIRES_TIMEZONE;
@@ -81,7 +90,7 @@ export class DailyRaceScheduler {
     const current = this.options.store.get(slotKey);
     if (current?.status === 'claimed' || current?.status === 'expired') return 'duplicate';
 
-    const window = getScoringWindowBounds(slotKey, timezone, this.options.source.raceWindowMinutes ?? 60, this.options.source.schedule);
+    const window = getScoringWindowBounds(slotKey, timezone, this.options.source.raceWindowMinutes ?? 60, this.effectiveSchedule);
     if (window && at >= window.end) {
       this.options.store.expire(slotKey);
       this.retryTimers.delete(slotKey);
@@ -99,7 +108,7 @@ export class DailyRaceScheduler {
   }
 
   start(): void {
-    this.task = cron.schedule(this.options.schedule ?? DAILY_SCORING_CRON, () => {
+    this.task = cron.schedule(this.effectiveSchedule.expression, () => {
       void this.runSlot().catch((error) => console.error(JSON.stringify({ level: 'error', component: 'scoring-scheduler', error: String(error) })));
     }, { timezone: this.options.timezone ?? BUENOS_AIRES_TIMEZONE, noOverlap: true });
   }

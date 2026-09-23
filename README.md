@@ -57,7 +57,7 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 | `SCAN_ON_START` | `true` | Reprocesa la carpeta al arrancar con las mismas reglas de estabilidad. |
 | `MIN_FILE_AGE_MS` | `3000` | Espera mínima antes de parsear. |
 | `WATCH_GLOB` | `*RACE*.json` | Filtro de archivos observados. |
-| `SCORING_SCHEDULE` | `0 21 * * *` | Daily scoring time in Buenos Aires. For the temporary first-race test only, set `SCORING_SCHEDULE=0 12 * * *` in `.env`; keep the production default at `21:00`. |
+| `SCORING_SCHEDULE` | `0 21 * * *` | Any valid daily cron schedule in the form `minute hour * * *`, using Buenos Aires time. The production default is `21:00`. |
 | `DEFAULT_SAFETY_RATING` | `75` | Safety inicial para GUIDs nuevos. |
 | `SAFETY_MEMORY_FACTOR` | `0.85` | Memoria histórica de safety. |
 | `MIN_ACTIVE_DRIVERS_FOR_SAFETY_GAIN` | `3` | Mínimo de pilotos activos para que la carrera puntúe safety. |

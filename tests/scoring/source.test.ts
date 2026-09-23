@@ -3,18 +3,19 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findFirstEligibleRace, parseRaceFilenameTimestamp, validateRaceFile } from '../../src/scoring/acsmAdapter';
+import { findFirstEligibleRace, getScoringWindowBounds, parseRaceFilenameTimestamp, validateRaceFile } from '../../src/scoring/acsmAdapter';
 import { loadConfig } from '../../src/config';
+import { parseDailyScoringSchedule } from '../../src/scoring/schedule';
 
 const race = JSON.stringify({ Type: 'RACE', TrackName: 'test', TrackConfig: '', DurationSecs: 0, RaceLaps: 3, Cars: [], Result: [], Laps: [], Events: [] });
 
 const now = new Date('2026-06-21T01:00:00.000Z');
-const config = (resultsDir: string, schedule?: '0 21 * * *' | '0 12 * * *') => ({
+const config = (resultsDir: string, schedule?: string) => ({
   resultsDir,
   sourceGlob: '*_RACE.json',
   minFileAgeMs: 1000,
   stabilityDelayMs: 1,
-  ...(schedule ? { schedule } : {})
+  ...(schedule ? { schedule: parseDailyScoringSchedule(schedule) } : {})
 });
 
 async function stableFile(dir: string, fileName: string, referenceNow = now): Promise<void> {
@@ -98,9 +99,17 @@ test('source adapter rejects a file that changes during the stability window', a
 
 test('scoring race window setting defaults to 60 minutes and rejects non-positive values', () => {
   assert.equal(loadConfig({}).scoringRaceWindowMinutes, 60);
-  assert.equal(loadConfig({}).scoringSchedule, '0 21 * * *');
-  assert.equal(loadConfig({ SCORING_SCHEDULE: '0 12 * * *' }).scoringSchedule, '0 12 * * *');
-  assert.throws(() => loadConfig({ SCORING_SCHEDULE: '0 13 * * *' }), /SCORING_SCHEDULE/);
+  assert.deepEqual(loadConfig({}).scoringSchedule, { expression: '0 21 * * *', minute: 0, hour: 21 });
+  assert.deepEqual(loadConfig({ SCORING_SCHEDULE: '0 10 * * *' }).scoringSchedule, { expression: '0 10 * * *', minute: 0, hour: 10 });
+  assert.deepEqual(loadConfig({ SCORING_SCHEDULE: '0 13 * * *' }).scoringSchedule, { expression: '0 13 * * *', minute: 0, hour: 13 });
+  assert.deepEqual(loadConfig({ SCORING_SCHEDULE: '0 21 * * *' }).scoringSchedule, { expression: '0 21 * * *', minute: 0, hour: 21 });
+  assert.deepEqual(loadConfig({ SCORING_SCHEDULE: '15 13 * * *' }).scoringSchedule, { expression: '15 13 * * *', minute: 15, hour: 13 });
+  for (const schedule of ['13:00', '0 13 * *', '0 13 * * 1', '60 13 * * *', '0 24 * * *']) {
+    assert.throws(() => loadConfig({ SCORING_SCHEDULE: schedule }), /SCORING_SCHEDULE/);
+  }
+  assert.equal(getScoringWindowBounds('2026-06-20', undefined, 60, parseDailyScoringSchedule('0 10 * * *'))?.start.toISOString(), '2026-06-20T13:00:00.000Z');
+  assert.equal(getScoringWindowBounds('2026-06-20', undefined, 60, parseDailyScoringSchedule('0 13 * * *'))?.start.toISOString(), '2026-06-20T16:00:00.000Z');
+  assert.equal(getScoringWindowBounds('2026-06-20', undefined, 60, parseDailyScoringSchedule('0 21 * * *'))?.start.toISOString(), '2026-06-21T00:00:00.000Z');
   assert.equal(loadConfig({}).safetyMinImpactKmh, 30);
   assert.equal(loadConfig({ SAFETY_MIN_IMPACT_KMH: '45' }).safetyMinImpactKmh, 45);
   assert.throws(() => loadConfig({ SAFETY_MIN_IMPACT_KMH: '-1' }));

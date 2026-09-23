@@ -3,10 +3,11 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { parseRaceJson } from '../parser/parseRaceJson';
 import type { ParsedRace } from '../types/assetto';
+import { DEFAULT_DAILY_SCORING_SCHEDULE, type DailyScoringSchedule } from './schedule';
 
 export const DEFAULT_SCORING_TIMEZONE = 'America/Argentina/Buenos_Aires' as const;
-export const DEFAULT_SCORING_SCHEDULE = '0 21 * * *' as const;
-export type ScoringSchedule = '0 21 * * *' | '0 12 * * *';
+export const DEFAULT_SCORING_SCHEDULE = DEFAULT_DAILY_SCORING_SCHEDULE;
+export type ScoringSchedule = DailyScoringSchedule;
 
 export type ParsedRaceFilenameTimestamp = {
   year: number;
@@ -72,9 +73,7 @@ export function getScoringWindowBounds(
   if (!Number.isInteger(windowMinutes) || windowMinutes <= 0) throw new Error('windowMinutes must be a positive integer');
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(slotDate);
   if (!match) return null;
-  const hour = schedule === '0 12 * * *' ? 12 : schedule === DEFAULT_SCORING_SCHEDULE ? 21 : null;
-  if (hour === null) throw new Error('schedule must be an allowlisted scoring schedule');
-  const start = localDateTimeToInstant({ year: Number(match[1]), month: Number(match[2]), day: Number(match[3]), hour, minute: 0 }, timezone);
+  const start = localDateTimeToInstant({ year: Number(match[1]), month: Number(match[2]), day: Number(match[3]), hour: schedule.hour, minute: schedule.minute }, timezone);
   return start ? { start, end: new Date(start.getTime() + windowMinutes * 60_000) } : null;
 }
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DailyRaceScheduler, isAmbiguousLocalTime, localDateKey, type RunSlotStore } from '../../src/scoring/scheduler';
 import type { ValidatedRaceSource } from '../../src/scoring/acsmAdapter';
+import { parseDailyScoringSchedule } from '../../src/scoring/schedule';
 
 class MemorySlots implements RunSlotStore {
   rows = new Map<string, { status: 'pending' | 'claimed' | 'expired'; sourceFileName: string | null }>();
@@ -15,9 +16,9 @@ test('slot identity uses Buenos Aires local date at 21:00', () => {
   assert.equal(localDateKey(new Date('2026-08-20T00:00:00Z')), '2026-08-19');
 });
 
-test('scheduler uses the configured 12:00 schedule and defaults to 21:00', () => {
+test('scheduler uses the configured daily schedule and defaults to 21:00', () => {
   const createScheduler = (schedule?: string) => new DailyRaceScheduler({
-    schedule,
+    schedule: schedule ? parseDailyScoringSchedule(schedule) : undefined,
     source: { resultsDir: '', sourceGlob: '*_RACE.json', minFileAgeMs: 0 },
     store: new MemorySlots(),
     onClaim: async () => {}
@@ -31,8 +32,31 @@ test('scheduler uses the configured 12:00 schedule and defaults to 21:00', () =>
     return new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', hour12: false }).format(nextRun);
   };
 
+  assert.equal(nextHour(createScheduler('0 10 * * *')), '10');
   assert.equal(nextHour(createScheduler('0 12 * * *')), '12');
+  assert.equal(nextHour(createScheduler('0 13 * * *')), '13');
   assert.equal(nextHour(createScheduler()), '21');
+});
+
+test('scheduler uses schedule-only configuration for both trigger and scoring window', async () => {
+  const schedule = parseDailyScoringSchedule('0 10 * * *');
+  const store = new MemorySlots();
+  let sourceSchedule;
+  const scheduler = new DailyRaceScheduler({
+    schedule,
+    source: { resultsDir: '', sourceGlob: '*_RACE.json', minFileAgeMs: 0 },
+    store,
+    onClaim: async () => {},
+    findSource: async (source) => {
+      sourceSchedule = source.schedule;
+      return null;
+    }
+  });
+
+  assert.equal(await scheduler.runSlot(new Date('2026-08-20T13:30:00.000Z'), '2026-08-20'), 'pending');
+  assert.deepEqual(sourceSchedule, schedule);
+  assert.equal(await scheduler.runSlot(new Date('2026-08-20T14:00:00.000Z'), '2026-08-20'), 'expired');
+  scheduler.stop();
 });
 
 test('pending slot retries late files and claims only once across restart', async () => {
