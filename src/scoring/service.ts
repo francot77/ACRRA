@@ -68,13 +68,31 @@ export class ScoringRunService {
         currentStandings.push({ driverName: identity.displayName, points: award?.points ?? 0, races: 1, wins: result.classified && result.position === 1 ? 1 : 0, podiums: result.classified && result.position <= 3 ? 1 : 0 });
       }
     }
+    const currentRaceResults = source.race.drivers.map((driver) => {
+      const identity = this.store.identities.resolve(driver.name, driver.guid);
+      const result = results.find((entry) => entry.driverId === identity.id);
+      const award = calculated.find((entry) => entry.driverId === identity.id);
+      return {
+        driverName: identity.displayName,
+        position: result?.position ?? driver.position,
+        points: award?.points ?? 0,
+        status: result?.classified ? 'finished' as const : 'dnf' as const,
+        bestLap: driver.bestLap
+      };
+    });
     const report = buildStandingsMessage({
       reportId,
       raceId,
       runId,
       rows: currentStandings
         .sort((left, right) => right.points - left.points || right.wins - left.wins || left.driverName.localeCompare(right.driverName))
-        .map((row, index) => ({ ...row, position: index + 1 }))
+        .map((row, index) => ({ ...row, position: index + 1 })),
+      currentRace: {
+        trackName: source.race.trackName,
+        trackConfig: source.race.trackConfig,
+        driverCount: source.race.drivers.length,
+        results: currentRaceResults
+      }
     });
     const committed = this.store.commitAwardsAndQueue({ raceId, runId, results }, awards, report);
     const delivery = await this.deliverOutbox(reportId);

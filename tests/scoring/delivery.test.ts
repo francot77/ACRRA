@@ -35,12 +35,15 @@ function source(): ValidatedRaceSource {
 test('standings report is stable, named, and limited to twenty drivers', () => {
   const report = buildStandingsMessage({
     reportId: 'report-1', raceId: 'race-1', runId: 'run-1',
-    rows: Array.from({ length: 12 }, (_, index) => ({ driverName: `Pilot ${index + 1}`, position: index + 1, points: 12 - index }))
+    rows: Array.from({ length: 12 }, (_, index) => ({ driverName: `Pilot ${index + 1}`, position: index + 1, points: 12 - index })),
+    currentRace: { trackName: 'Monza', driverCount: 1, results: [{ driverName: 'Pilot 1', position: 1, points: 12, status: 'finished' }] }
   });
   assert.equal(report.title, 'Copa NHRacing — resultados de hoy');
   assert.equal(report.rows.length, 12);
-  assert.match(report.message.webhookBody.embeds[0].description, /1\. Pilot 1 — 12 pts · 0 carreras · 0 victorias · 0 podios/);
+  assert.match(report.message.webhookBody.embeds[0].description, /🥇 Pilot 1 — 12 pts/);
   assert.match(report.message.webhookBody.embeds[0].description, /Pilot 11/);
+  assert.match(report.message.webhookBody.embeds[0].description, /#  Piloto.*Pts  V  Pod/s);
+  assert.equal((report.message.webhookBody.embeds[0].description.match(/Clasificación general/g) ?? []).length, 1);
 });
 
 test('standings message renders one readable ranking without internal identifiers', () => {
@@ -48,15 +51,35 @@ test('standings message renders one readable ranking without internal identifier
     reportId: 'report:internal',
     raceId: 'race:internal',
     runId: 'run:internal',
-    rows: [{ driverName: 'Winner', position: 1, points: 25, races: 1, wins: 1, podiums: 1 }]
+    rows: [{ driverName: 'Winner', position: 1, points: 25, races: 1, wins: 1, podiums: 1 }],
+    currentRace: { trackName: 'Monza', trackConfig: 'GP', driverCount: 1, results: [{ driverName: 'Winner', position: 1, points: 25, status: 'finished' }] }
   });
   const embed = report.message.webhookBody.embeds[0];
 
   assert.equal(embed.fields.length, 0);
-  assert.equal(embed.description, '1. Winner — 25 pts · 1 carrera · 1 victoria · 1 podio');
+  assert.equal(embed.title, 'Copa NHRacing — resultados de hoy');
+  assert.match(embed.description, /Monza · GP/);
+  assert.match(embed.description, /🥇 Winner — 25 pts/);
+  assert.match(embed.description, /Clasificación general/);
+  assert.match(embed.description, /Winner.*25.*1.*1/);
   assert.equal(embed.footer.text, 'Clasificación del campeonato');
   assert.doesNotMatch(embed.footer.text, /race:|run:/i);
-  assert.doesNotMatch(embed.description, /Clasificación/);
+  assert.doesNotMatch(embed.description, /report:|race:|run:/i);
+});
+
+test('standings message renders DNF without inventing a normal zero-point finish', () => {
+  const report = buildStandingsMessage({
+    reportId: 'report-1', raceId: 'race-1', runId: 'run-1',
+    rows: [{ driverName: 'Winner', position: 1, points: 25, wins: 1, podiums: 1 }, { driverName: 'Retired', position: 2, points: 0 }],
+    currentRace: { trackName: 'Spa', driverCount: 2, results: [
+      { driverName: 'Winner', position: 1, points: 25, status: 'finished', bestLap: 99.123 },
+      { driverName: 'Retired', position: 2, points: 0, status: 'dnf' }
+    ] }
+  });
+  const description = report.message.webhookBody.embeds[0].description;
+  assert.match(description, /Retired — 0 pts — DNF/);
+  assert.match(description, /⚡ Vuelta rápida: Winner · 99\.123 s/);
+  assert.doesNotMatch(description, /\.json|report-1|race-1|run-1/);
 });
 
 test('failed delivery retries the stored report without rescoring or duplicate awards', async () => {
@@ -87,7 +110,7 @@ test('failed delivery retries the stored report without rescoring or duplicate a
 test('selects the newest persisted report and force-resends an already sent report', async () => {
   const database = openDatabase(join(mkdtempSync(join(tmpdir(), 'acrra-resend-')), 'scoring.sqlite'));
   const store = new ScoringStore(database);
-  const report = buildStandingsMessage({ reportId: 'latest-report', raceId: 'race-latest', runId: 'run-latest', rows: [] });
+  const report = buildStandingsMessage({ reportId: 'latest-report', raceId: 'race-latest', runId: 'run-latest', rows: [], currentRace: { trackName: 'Monza', driverCount: 0, results: [] } });
   database.prepare('INSERT INTO scoring_runs (run_id, race_id, committed_at) VALUES (?, ?, ?)').run('run-latest', 'race-latest', '2026-08-20T00:00:00.000Z');
   database.prepare('INSERT INTO scoring_report_outbox (report_id, run_id, status, payload_json, attempts, created_at) VALUES (?, ?, ?, ?, ?, ?)').run('older-report', 'run-latest', 'sent', JSON.stringify(report), 1, '2026-08-19T00:00:00.000Z');
   database.prepare('INSERT INTO scoring_runs (run_id, race_id, committed_at) VALUES (?, ?, ?)').run('run-newest', 'race-newest', '2026-08-20T00:00:00.000Z');
@@ -110,8 +133,10 @@ test('eligible scheduled run scores once and delivers the dedicated report', asy
   const database = openDatabase(join(mkdtempSync(join(tmpdir(), 'acrra-scheduled-')), 'scoring.sqlite'));
   const store = new ScoringStore(database);
   let deliveredTitle = '';
+  let deliveredDescription = '';
   const service = new ScoringRunService(store, 'https://example.invalid/results', async (_url, report) => {
     deliveredTitle = report.title;
+    deliveredDescription = report.message.webhookBody.embeds[0].description;
     return 'sent';
   });
   const scheduler = new DailyRaceScheduler({
@@ -123,6 +148,11 @@ test('eligible scheduled run scores once and delivers the dedicated report', asy
   });
   assert.equal(await scheduler.runSlot(), 'claimed');
   assert.equal(deliveredTitle, 'Copa NHRacing — resultados de hoy');
+  assert.match(deliveredDescription, /Monza/);
+  assert.match(deliveredDescription, /🏆 Ganador: Pilot One/);
+  assert.match(deliveredDescription, /⚡ Vuelta rápida: Pilot One · 90\.000 s/);
+  assert.match(deliveredDescription, /🥇 Pilot One — 25 pts/);
+  assert.match(deliveredDescription, /#  Piloto.*Pts  V  Pod/s);
   assert.equal(database.prepare('SELECT count(*) AS count FROM championship_awards').get().count, 2);
   assert.equal(await scheduler.runSlot(), 'duplicate');
   database.close();
