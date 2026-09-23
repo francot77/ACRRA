@@ -60,6 +60,32 @@ test('scheduler uses schedule-only configuration for both trigger and scoring wi
   scheduler.stop();
 });
 
+test('scheduler attempts scoring immediately for an existing eligible source at startup', async () => {
+  const store = new MemorySlots();
+  const source: ValidatedRaceSource = { fileName: '2026_8_20_14_15_RACE.json', filePath: 'race.json', fileHash: 'hash', race: {} as ValidatedRaceSource['race'] };
+  let claimed: string | null = null;
+  let resolveClaim!: () => void;
+  const claimCompleted = new Promise<void>((resolve) => { resolveClaim = resolve; });
+  const scheduler = new DailyRaceScheduler({
+    schedule: parseDailyScoringSchedule('0 14 * * *'),
+    source: { resultsDir: '', sourceGlob: '*_RACE.json', minFileAgeMs: 0 },
+    store,
+    now: () => new Date('2026-08-20T17:30:00.000Z'),
+    findSource: async () => source,
+    onClaim: async (slotKey) => {
+      claimed = slotKey;
+      resolveClaim();
+    }
+  });
+
+  scheduler.start();
+  await claimCompleted;
+  scheduler.stop();
+
+  assert.equal(claimed, '2026-08-20');
+  assert.equal(store.get('2026-08-20')?.status, 'claimed');
+});
+
 test('pending slot retries late files and claims only once across restart', async () => {
   const store = new MemorySlots();
   let available: ValidatedRaceSource | null = null;

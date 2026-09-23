@@ -126,6 +126,7 @@ export class DailyRaceScheduler {
     this.task = cron.schedule(this.effectiveSchedule.expression, () => {
       void this.runSlot().catch((error) => console.error(JSON.stringify({ level: 'error', component: 'scoring-scheduler', error: String(error) })));
     }, { timezone: this.options.timezone ?? BUENOS_AIRES_TIMEZONE, noOverlap: true });
+    void this.runSlot().catch((error) => console.error(JSON.stringify({ level: 'error', component: 'scoring-scheduler', error: String(error) })));
   }
 
   stop(): void {
