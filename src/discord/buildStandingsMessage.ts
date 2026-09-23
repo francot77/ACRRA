@@ -21,6 +21,7 @@ export type CurrentRacePresentation = Readonly<{
   trackName: string;
   trackConfig?: string | null;
   driverCount: number;
+  eventDate?: string;
   results: readonly CurrentRaceResult[];
 }>;
 
@@ -46,16 +47,16 @@ export function buildStandingsMessage(input: {
   const rows: StandingsRow[] = input.rows
     .map((row) => ({ ...row, races: row.races ?? 0, wins: row.wins ?? 0, podiums: row.podiums ?? 0 }))
     .sort((left, right) => left.position - right.position)
-    .slice(0, 20);
-  const title = 'Copa NHRacing — resultados de hoy';
+    .slice(0, 10);
   const race = input.currentRace ? normalizeRace(input.currentRace) : undefined;
+  const title = formatTitle(race?.eventDate);
   const classification = rows.length === 0 ? 'Sin pilotos registrados.' : formatClassification(rows);
-  const description = race ? formatRaceMetadata(race) : 'Resultados del campeonato';
+  const description = race ? formatRaceMetadata(race) : undefined;
   const fields = [
     ...(race ? formatFields('Resultado de la carrera', formatCurrentResult(race.results)) : []),
     ...formatFields('🏆 Campeonato', classification)
   ];
-  const summaryText = [title, description, ...fields.map((field) => `${field.name}\n${field.value}`)].join('\n\n');
+  const summaryText = [title, description, ...fields.map((field) => `${field.name}\n${field.value}`)].filter(Boolean).join('\n\n');
 
   return {
     ...input,
@@ -69,14 +70,24 @@ export function buildStandingsMessage(input: {
         content: title,
         embeds: [{
           title,
-          description,
+          description: description ?? '',
           color: 0x2f7df6,
           fields,
-          footer: { text: 'ACRRA · Resultados de hoy' }
+          footer: { text: 'ACRRA · Top 10 del campeonato' }
         }]
       }
     }
   };
+}
+
+function formatTitle(eventDate?: string): string {
+  const formattedDate = formatEventDate(eventDate);
+  return formattedDate ? `🏆 Copa NHRacing\nResultados del ${formattedDate}` : '🏆 Copa NHRacing';
+}
+
+function formatEventDate(eventDate?: string): string | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(eventDate ?? '');
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : undefined;
 }
 
 function formatRaceMetadata(race: CurrentRacePresentation): string {
@@ -119,7 +130,8 @@ function formatClassification(rows: readonly StandingsRow[]): string {
       row.wins > 0 ? `${row.wins} ${row.wins === 1 ? 'victoria' : 'victorias'}` : null,
       row.podiums > 0 ? `${row.podiums} ${row.podiums === 1 ? 'podio' : 'podios'}` : null
     ].filter((stat): stat is string => stat !== null);
-    return `${row.position}. ${row.position <= 3 ? `**${truncate(row.driverName, 40)}**` : truncate(row.driverName, 40)} · ${row.points} pts${stats.length > 0 ? ` · ${stats.join(' · ')}` : ''}`;
+    const medal = row.position <= 3 ? ['🥇', '🥈', '🥉'][row.position - 1] : `${row.position}.`;
+    return `${medal} ${row.position <= 3 ? `**${truncate(row.driverName, 40)}**` : truncate(row.driverName, 40)} · ${row.points} pts${stats.length > 0 ? ` · ${stats.join(' · ')}` : ''}`;
   }).join('\n');
 }
 

@@ -34,6 +34,7 @@ export type ValidatedRaceSource = {
   fileName: string;
   filePath: string;
   fileHash: string;
+  eventDate?: string;
   race: ParsedRace;
 };
 
@@ -112,7 +113,8 @@ export async function validateRaceFile(
   config: Pick<RaceSourceConfig, 'minFileAgeMs' | 'stabilityDelayMs' | 'sourceTimezone'>,
   now = new Date()
 ): Promise<ValidatedRaceSource | null> {
-  if (!parseRaceFilenameTimestamp(basename(filePath), config.sourceTimezone ?? DEFAULT_SCORING_SOURCE_TIMEZONE)) return null;
+  const parsedTimestamp = parseRaceFilenameTimestamp(basename(filePath), config.sourceTimezone ?? DEFAULT_SCORING_SOURCE_TIMEZONE);
+  if (!parsedTimestamp) return null;
   const first = await stat(filePath).catch(() => null);
   if (!first || now.getTime() - first.mtimeMs < config.minFileAgeMs) return null;
 
@@ -134,6 +136,7 @@ export async function validateRaceFile(
     fileName: basename(filePath),
     filePath,
     fileHash: createHash('sha256').update(content).digest('hex'),
+    eventDate: parsedTimestamp.localDate,
     race
   };
 }

@@ -15,6 +15,7 @@ function source(): ValidatedRaceSource {
     fileName: 'RACE.json',
     filePath: 'RACE.json',
     fileHash: 'stable-hash',
+    eventDate: '2026-08-20',
     race: {
       type: 'RACE',
       sourceFileName: 'RACE.json',
@@ -32,18 +33,21 @@ function source(): ValidatedRaceSource {
   };
 }
 
-test('standings report is stable, named, and limited to twenty drivers', () => {
+test('standings report is stable, named, and limited to the top ten drivers', () => {
   const report = buildStandingsMessage({
     reportId: 'report-1', raceId: 'race-1', runId: 'run-1',
     rows: Array.from({ length: 12 }, (_, index) => ({ driverName: `Pilot ${index + 1}`, position: index + 1, points: 12 - index })),
     currentRace: { trackName: 'Monza', driverCount: 1, results: [{ driverName: 'Pilot 1', position: 1, points: 12, status: 'finished' }] }
   });
-  assert.equal(report.title, 'Copa NHRacing — resultados de hoy');
-  assert.equal(report.rows.length, 12);
+  assert.equal(report.title, '🏆 Copa NHRacing');
+  assert.equal(report.rows.length, 10);
   const embed = report.message.webhookBody.embeds[0];
   const rendered = JSON.stringify(embed);
   assert.match(rendered, /🥇 \*\*Pilot 1\*\* — 12 pts/);
+  assert.match(rendered, /🥈 \*\*Pilot 2\*\*/);
+  assert.match(rendered, /🥉 \*\*Pilot 3\*\*/);
   assert.match(rendered, /4\. Pilot 4/);
+  assert.doesNotMatch(rendered, /11\. Pilot 11|12\. Pilot 12/);
   assert.doesNotMatch(rendered, /```|#  Piloto|Pts  V  Pod/);
   assert.equal((rendered.match(/🏆 Campeonato/g) ?? []).length, 1);
 });
@@ -59,14 +63,14 @@ test('standings message renders one readable ranking without internal identifier
   const embed = report.message.webhookBody.embeds[0];
 
   assert.equal(embed.fields.length, 2);
-  assert.equal(embed.title, 'Copa NHRacing — resultados de hoy');
+  assert.equal(embed.title, '🏆 Copa NHRacing');
   assert.match(embed.description, /Monza · GP/);
   assert.match(embed.fields[0].value, /🥇 \*\*Winner\*\* — 25 pts/);
   assert.equal(embed.fields[0].name, 'Resultado de la carrera');
-  assert.match(embed.fields[1].value, /1\. \*\*Winner\*\* · 25 pts · 1 victoria · 1 podio/);
+  assert.match(embed.fields[1].value, /🥇 \*\*Winner\*\* · 25 pts · 1 victoria · 1 podio/);
   assert.equal(embed.fields[1].name, '🏆 Campeonato');
   assert.doesNotMatch(JSON.stringify(embed), /```|Clasificación general|Clasificación del campeonato/);
-  assert.equal(embed.footer.text, 'ACRRA · Resultados de hoy');
+  assert.equal(embed.footer.text, 'ACRRA · Top 10 del campeonato');
   assert.doesNotMatch(embed.footer.text, /race:|run:/i);
   assert.doesNotMatch(embed.description, /report:|race:|run:/i);
 });
@@ -84,6 +88,25 @@ test('standings message renders DNF without inventing a normal zero-point finish
   assert.match(embed.fields[0].value, /🥈 \*\*Retired\*\* — 0 pts — DNF/);
   assert.match(embed.description, /⚡ Vuelta rápida: Winner · 99\.123 s/);
   assert.doesNotMatch(JSON.stringify(embed), /\.json|report-1|race-1|run-1/);
+});
+
+test('standings message formats the source event date and omits zero stats', () => {
+  const report = buildStandingsMessage({
+    reportId: 'report-1', raceId: 'race-1', runId: 'run-1',
+    rows: [
+      { driverName: 'Winner', position: 1, points: 25, wins: 0, podiums: 0 },
+      { driverName: 'Fourth', position: 4, points: 0, wins: 0, podiums: 0 }
+    ],
+    currentRace: { trackName: 'Monza', driverCount: 2, eventDate: '2026-09-23', results: [] }
+  });
+  const embed = report.message.webhookBody.embeds[0];
+  assert.equal(embed.title, '🏆 Copa NHRacing\nResultados del 23/09/2026');
+  assert.match(embed.fields[1].value, /🥇 \*\*Winner\*\* · 25 pts/);
+  assert.match(embed.fields[1].value, /4\. Fourth · 0 pts/);
+  assert.doesNotMatch(embed.fields[1].value, /victoria|podio/);
+  assert.equal(embed.footer.text, 'ACRRA · Top 10 del campeonato');
+  assert.equal((JSON.stringify(embed).match(/🏆 Campeonato/g) ?? []).length, 1);
+  assert.doesNotMatch(JSON.stringify(embed), /resultados del campeonato|Clasificación general|resultados de hoy/i);
 });
 
 test('failed delivery retries the stored report without rescoring or duplicate awards', async () => {
@@ -152,15 +175,18 @@ test('resend re-renders a legacy payload as a compact classification without tec
   database.prepare('INSERT INTO scoring_report_outbox (report_id, run_id, status, payload_json, attempts, created_at) VALUES (?, ?, ?, ?, ?, ?)').run('legacy-report', 'run:legacy', 'sent', JSON.stringify(legacyPayload), 1, '2026-08-20T00:00:00.000Z');
 
   let deliveredDescription = '';
+  let deliveredTitle = '';
   const service = new ScoringRunService(store, 'https://example.invalid/results', async (_url, report) => {
+    deliveredTitle = report.title;
     deliveredDescription = JSON.stringify(report.message.webhookBody.embeds[0]);
     assert.equal(report.reportId, 'legacy-report');
     return 'sent';
   });
 
   assert.equal(await service.resendLatest(), 'sent');
+  assert.equal(deliveredTitle, '🏆 Copa NHRacing');
   assert.match(deliveredDescription, /🏆 Campeonato/);
-  assert.match(deliveredDescription, /1\. \*\*Legacy Winner\*\* · 25 pts · 1 victoria · 1 podio/);
+  assert.match(deliveredDescription, /🥇 \*\*Legacy Winner\*\* · 25 pts · 1 victoria · 1 podio/);
   assert.doesNotMatch(deliveredDescription, /race:|run:|Old duplicated/);
   const stored = JSON.parse(database.prepare('SELECT payload_json FROM scoring_report_outbox WHERE report_id = ?').get('legacy-report').payload_json);
   assert.equal(stored.reportId, 'legacy-report');
@@ -187,7 +213,7 @@ test('eligible scheduled run scores once and delivers the dedicated report', asy
     onClaim: (slotKey, validated) => service.process(slotKey, validated).then(() => undefined)
   });
   assert.equal(await scheduler.runSlot(), 'claimed');
-  assert.equal(deliveredTitle, 'Copa NHRacing — resultados de hoy');
+  assert.equal(deliveredTitle, '🏆 Copa NHRacing\nResultados del 20/08/2026');
   assert.match(deliveredDescription, /Monza/);
   assert.match(deliveredDescription, /🏆 Ganador: Pilot One/);
   assert.match(deliveredDescription, /⚡ Vuelta rápida: Pilot One · 90\.000 s/);

@@ -39,6 +39,7 @@ test('source adapter selects the earliest eligible 21:00+ export by parsed times
   await stableFile(dir, '2026_6_20_21_5_RACE.json');
   const source = await findFirstEligibleRace(config(dir), now, '2026-06-20');
   assert.equal(source?.fileName, '2026_6_20_21_5_RACE.json');
+  assert.equal(source?.eventDate, '2026-06-20');
   assert.equal(parseRaceFilenameTimestamp('2026_6_20_1_52_RACE.json')?.timestamp.toISOString(), '2026-06-20T01:52:00.000Z');
   assert.equal(parseRaceFilenameTimestamp('2026_6_20_1_52_RACE.json')?.localDate, '2026-06-20');
 });

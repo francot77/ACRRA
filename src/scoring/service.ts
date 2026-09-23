@@ -91,6 +91,7 @@ export class ScoringRunService {
         trackName: source.race.trackName,
         trackConfig: source.race.trackConfig,
         driverCount: source.race.drivers.length,
+        eventDate: source.eventDate,
         results: currentRaceResults
       }
     });
